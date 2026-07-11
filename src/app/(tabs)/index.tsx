@@ -1,6 +1,48 @@
+import * as Location from 'expo-location';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 export default function HomeScreen() {
+
+  const [location, setLocation] = useState<Location.LocationObjectCoords | null>(null);
+  const [city, setCity] = useState<string | null>(null);
+  const [state, setState] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function getLocation() {
+      try {
+        const { status } =
+          await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          console.log('Permission denied');
+          return;
+        }
+
+        const currentLocation =
+          await Location.getCurrentPositionAsync({});
+
+        setLocation(currentLocation.coords);
+
+        const address = await Location.reverseGeocodeAsync({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+        });
+
+        console.log(address);
+
+        if (address.length > 0) {
+          setCity(address[0].city);
+          setState(address[0].region);
+        }
+
+      } catch (error) {
+        console.log("Location error:", error);
+      }
+    }
+
+    getLocation();
+  }, []);
 
   const weather = {
     recommendation: '7:00 PM',
@@ -14,9 +56,9 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.greeting}>Good Afternoon 👋</Text>
+      <Text style={styles.greeting}>Good Afternoon</Text>
 
-      <Text style={styles.heading}>Best Time to Run</Text>
+      <Text style={styles.heading}>Best Time to Run {city && `in ${city}, ${state}`}</Text>
 
       <View style={styles.mainCard}>
         <Text style={styles.time}>{weather.recommendation}</Text>
