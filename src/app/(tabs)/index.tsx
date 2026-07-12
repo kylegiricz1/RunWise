@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import WeatherGraphCard from '../../components/WeatherGraphCard';
 
 export default function HomeScreen() {
 
@@ -8,6 +9,7 @@ export default function HomeScreen() {
   const [city, setCity] = useState<string | null>(null);
   const [state, setState] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [hourlyData, setHourlyData] = useState<HourlyPoint[]>([]);
 
   useEffect(() => {
     async function getLocation() {
@@ -25,27 +27,33 @@ export default function HomeScreen() {
 
         setLocation(currentLocation.coords);
 
-        const address = await Location.reverseGeocodeAsync({
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-        });
+        // Reverse geocoding can fail/throw on some platforms (e.g. web) —
+        // don't let it block the weather fetch below.
+        try {
+          const address = await Location.reverseGeocodeAsync({
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude,
+          });
 
-        if (address.length > 0) {
-          setCity(address[0].city);
-          setState(address[0].region);
+          if (address.length > 0) {
+            setCity(address[0].city);
+            setState(address[0].region);
+          }
+        } catch (geocodeError) {
+          console.log('Reverse geocode error:', geocodeError);
         }
 
         const { latitude, longitude } = currentLocation.coords;
         const url =
           `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
           `&daily=temperature_2m_max,apparent_temperature_max,precipitation_probability_max,windspeed_10m_max,relative_humidity_2m_mean,weathercode` +
+          `&hourly=apparent_temperature,relative_humidity_2m,precipitation_probability,windspeed_10m` +
           `&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=auto`;
 
         const response = await fetch(url);
         const data = await response.json();
 
-        // index 0: today, index 1: tomorrow
-        const i = 1;
+        const i = 1; // tomorrow: daily
 
         setWeather({
           temperature: `${Math.round(data.daily.temperature_2m_max[i])}°F`,
@@ -55,6 +63,19 @@ export default function HomeScreen() {
           humidity: `${Math.round(data.daily.relative_humidity_2m_mean[i])}%`,
           rainChance: `${Math.round(data.daily.precipitation_probability_max[i])}%`,
         });
+
+        // Hourly data for tomorrow: indices 24–47 (index 0 = midnight today)
+        const hourly: HourlyPoint[] = [];
+        for (let h = 24; h < 48; h++) {
+          hourly.push({
+            time: data.hourly.time[h],
+            feelsLike: data.hourly.apparent_temperature[h],
+            humidity: data.hourly.relative_humidity_2m[h],
+            rainChance: data.hourly.precipitation_probability[h],
+            wind: data.hourly.windspeed_10m[h],
+          });
+        }
+        setHourlyData(hourly);
 
       } catch (error) {
         console.log("Location error:", error);
@@ -71,6 +92,14 @@ export default function HomeScreen() {
     wind: string;
     humidity: string;
     rainChance: string;
+  };
+
+  type HourlyPoint = {
+    time: string;
+    feelsLike: number;
+    humidity: number;
+    rainChance: number;
+    wind: number;
   };
 
   function getConditionText(code: number): string {
@@ -99,10 +128,12 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.greeting}>Good Afternoon</Text>
 
       <Text style={styles.heading}>Best Time to Run {city && `in ${city}, ${state}`}</Text>
+
+      <WeatherGraphCard data={hourlyData} />
 
       <View style={styles.mainCard}>
         <Text style={styles.time}>7:00 PM</Text>
@@ -144,7 +175,7 @@ export default function HomeScreen() {
           <Text style={styles.value}>{weather?.rainChance ?? '—'}</Text>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
