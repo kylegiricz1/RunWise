@@ -7,6 +7,7 @@ export default function HomeScreen() {
   const [location, setLocation] = useState<Location.LocationObjectCoords | null>(null);
   const [city, setCity] = useState<string | null>(null);
   const [state, setState] = useState<string | null>(null);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
 
   useEffect(() => {
     async function getLocation() {
@@ -29,12 +30,31 @@ export default function HomeScreen() {
           longitude: currentLocation.coords.longitude,
         });
 
-        console.log(address);
-
         if (address.length > 0) {
           setCity(address[0].city);
           setState(address[0].region);
         }
+
+        const { latitude, longitude } = currentLocation.coords;
+        const url =
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+          `&daily=temperature_2m_max,apparent_temperature_max,precipitation_probability_max,windspeed_10m_max,relative_humidity_2m_mean,weathercode` +
+          `&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=auto`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        // index 0: today, index 1: tomorrow
+        const i = 1;
+
+        setWeather({
+          temperature: `${Math.round(data.daily.temperature_2m_max[i])}°F`,
+          feelsLike: `${Math.round(data.daily.apparent_temperature_max[i])}°F`,
+          condition: getConditionText(data.daily.weathercode[i]),
+          wind: `${Math.round(data.daily.windspeed_10m_max[i])} mph`,
+          humidity: `${Math.round(data.daily.relative_humidity_2m_mean[i])}%`,
+          rainChance: `${Math.round(data.daily.precipitation_probability_max[i])}%`,
+        });
 
       } catch (error) {
         console.log("Location error:", error);
@@ -44,15 +64,39 @@ export default function HomeScreen() {
     getLocation();
   }, []);
 
-  const weather = {
-    recommendation: '7:00 PM',
-    temperature: '72°F',
-    feelsLike: '70°F',
-    condition: 'Partly Cloudy',
-    wind: '5 mph',
-    humidity: '48%',
-    rainChance: '10%',
+  type WeatherData = {
+    temperature: string;
+    feelsLike: string;
+    condition: string;
+    wind: string;
+    humidity: string;
+    rainChance: string;
   };
+
+  function getConditionText(code: number): string {
+    const map: Record<number, string> = {
+      0: 'Clear',
+      1: 'Mostly Clear',
+      2: 'Partly Cloudy',
+      3: 'Overcast',
+      45: 'Fog',
+      48: 'Fog',
+      51: 'Light Drizzle',
+      53: 'Drizzle',
+      55: 'Heavy Drizzle',
+      61: 'Light Rain',
+      63: 'Rain',
+      65: 'Heavy Rain',
+      71: 'Light Snow',
+      73: 'Snow',
+      75: 'Heavy Snow',
+      80: 'Rain Showers',
+      81: 'Rain Showers',
+      82: 'Heavy Showers',
+      95: 'Thunderstorm',
+    };
+    return map[code] ?? 'Unknown';
+  }
 
   return (
     <View style={styles.container}>
@@ -61,43 +105,43 @@ export default function HomeScreen() {
       <Text style={styles.heading}>Best Time to Run {city && `in ${city}, ${state}`}</Text>
 
       <View style={styles.mainCard}>
-        <Text style={styles.time}>{weather.recommendation}</Text>
+        <Text style={styles.time}>7:00 PM</Text>
         <Text style={styles.subtitle}>
           Cool temperatures and low wind
         </Text>
       </View>
 
       <View style={styles.weatherCard}>
-        <Text style={styles.cardTitle}>Current Weather</Text>
+        <Text style={styles.cardTitle}>Tomorrow's Weather</Text>
 
         <View style={styles.row}>
           <Text style={styles.label}>Temperature</Text>
-          <Text style={styles.value}>{weather.temperature}</Text>
+          <Text style={styles.value}>{weather?.temperature ?? '—'}</Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Feels Like</Text>
-          <Text style={styles.value}>{weather.feelsLike}</Text>
+          <Text style={styles.value}>{weather?.feelsLike ?? '—'}</Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Conditions</Text>
-          <Text style={styles.value}>{weather.condition}</Text>
+          <Text style={styles.value}>{weather?.condition ?? '—'}</Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Wind</Text>
-          <Text style={styles.value}>{weather.wind}</Text>
+          <Text style={styles.value}>{weather?.wind ?? '—'}</Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Humidity</Text>
-          <Text style={styles.value}>{weather.humidity}</Text>
+          <Text style={styles.value}>{weather?.humidity ?? '—'}</Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Rain Chance</Text>
-          <Text style={styles.value}>{weather.rainChance}</Text>
+          <Text style={styles.value}>{weather?.rainChance ?? '—'}</Text>
         </View>
       </View>
     </View>
