@@ -2,6 +2,7 @@ import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import WeatherGraphCard from '../../components/WeatherGraphCard';
+import { bestRunHour } from "../../services/weatherScoring/score";
 
 export default function HomeScreen() {
 
@@ -10,6 +11,7 @@ export default function HomeScreen() {
   const [state, setState] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [hourlyData, setHourlyData] = useState<HourlyPoint[]>([]);
+  const [bestTime, setBestTime] = useState<string| null>(null);
 
   useEffect(() => {
     async function getLocation() {
@@ -23,7 +25,9 @@ export default function HomeScreen() {
         }
 
         const currentLocation =
-          await Location.getCurrentPositionAsync({});
+          await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
 
         setLocation(currentLocation.coords);
 
@@ -76,6 +80,10 @@ export default function HomeScreen() {
           });
         }
         setHourlyData(hourly);
+
+        const time = bestRunHour(hourly).time.split("T")[1];
+
+        setBestTime(time);
 
       } catch (error) {
         console.log("Location error:", error);
@@ -133,15 +141,15 @@ export default function HomeScreen() {
 
       <Text style={styles.heading}>Best Time to Run {city && `in ${city}, ${state}`}</Text>
 
-      <WeatherGraphCard data={hourlyData} />
-
       <View style={styles.mainCard}>
-        <Text style={styles.time}>7:00 PM</Text>
+        <Text style={styles.time}> {bestTime}</Text>
         <Text style={styles.subtitle}>
           Cool temperatures and low wind
         </Text>
       </View>
 
+      <WeatherGraphCard data={hourlyData} />
+      
       <View style={styles.weatherCard}>
         <Text style={styles.cardTitle}>Tomorrow's Weather</Text>
 
@@ -185,6 +193,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f7fb',
     padding: 24,
     paddingTop: 70,
+    paddingBottom:150,
   },
 
   greeting: {
@@ -196,7 +205,7 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 32,
     fontWeight: 'bold',
-    marginBottom: 25,
+    marginBottom: 10,
   },
 
   mainCard: {
@@ -204,7 +213,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingVertical: 35,
     alignItems: 'center',
-    marginBottom: 25,
+    marginBottom: 10,
   },
 
   time: {
@@ -223,6 +232,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 18,
     padding: 20,
+    marginBottom:100,
   },
 
   cardTitle: {

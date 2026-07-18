@@ -1,7 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import React, { useMemo, useState } from 'react';
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedProps,
+  useSharedValue,
+} from 'react-native-reanimated';
+import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 
+// ---- Types (matches the shape produced in HomeScreen) ----
 type HourlyPoint = {
   time: string;
   feelsLike: number;
@@ -10,440 +17,494 @@ type HourlyPoint = {
   wind: number;
 };
 
+type MetricKey = 'feelsLike' | 'humidity' | 'wind' | 'rainChance';
+type AxisKey = 'percent' | 'temp' | 'wind';
+
 type Props = {
   data: HourlyPoint[];
-  // Index into `data` marking the best time to run.
-  // Leave undefined/null until the recommendation logic is wired up.
-  bestTimeIndex?: number | null;
 };
 
-type SeriesKey = 'feelsLike' | 'humidity' | 'rainChance' | 'wind';
+// ---- Animated SVG primitives ----
+const AnimatedLine = Animated.createAnimatedComponent(Line);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-const CHART_WIDTH = 320;
-const CHART_HEIGHT = 160;
-const PADDING_LEFT = 34;
-const PADDING_RIGHT = 34;
-const PADDING_TOP = 16;
-const PADDING_BOTTOM = 16;
-const TOOLTIP_WIDTH = 132;
-const TOOLTIP_HEIGHT = 92;
+// ---- Static metric config ----
+const METRICS: {
+  key: MetricKey;
+  label: string;
+  color: string;
+  unit: string;
+  axis: AxisKey;
+}[] = [
+  { key: 'feelsLike', label: 'Feels Like', color: '#3B82F6', unit: '°F', axis: 'temp' },
+  { key: 'humidity', label: 'Humidity', color: '#10B981', unit: '%', axis: 'percent' },
+  { key: 'wind', label: 'Wind', color: '#F59E0B', unit: 'mph', axis: 'wind' },
+  { key: 'rainChance', label: 'Rain', color: '#6366F1', unit: '%', axis: 'percent' },
+];
 
-const plotWidth = CHART_WIDTH - PADDING_LEFT - PADDING_RIGHT;
-const plotHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
+// ---- Layout constants ----
+const CARD_PADDING = 20;
+const CHART_HEIGHT = 190;
+const TOP_PAD = 16;
+const BOTTOM_PAD = 26;
+const LEFT_PAD = 34;
+const RIGHT_PAD = 46;
 
-const SERIES_META: Record<SeriesKey, { color: string; label: string; shape: 'line' | 'band' }> = {
-  feelsLike: { color: '#F97316', label: 'Feels Like (°F)', shape: 'line' },
-  humidity: { color: '#3B82F6', label: 'Humidity (%)', shape: 'line' },
-  rainChance: { color: '#93C5FD', label: 'Rain Chance', shape: 'band' },
-  wind: { color: '#10B981', label: 'Wind (mph)', shape: 'line' },
-};
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CHART_WIDTH = SCREEN_WIDTH - CARD_PADDING * 2 - LEFT_PAD - RIGHT_PAD;
+const PLOT_TOP = TOP_PAD;
+const PLOT_BOTTOM = TOP_PAD + CHART_HEIGHT;
 
-// Map a value to a y-pixel given a real domain (not normalized 0–1)
-function scaleY(value: number, min: number, max: number) {
-  const range = max - min || 1;
-  const t = (value - min) / range;
-  return PADDING_TOP + (1 - t) * plotHeight;
+function formatHour(isoTime: string): string {
+  const timePart = isoTime.split('T')[1] ?? isoTime;
+  const hour = parseInt(timePart.split(':')[0], 10);
+  const period = hour >= 12 ? 'PM' : 'AM';
+  let h12 = hour % 12;
+  if (h12 === 0) h12 = 12;
+  return `${h12}${period}`;
 }
 
-function xForIndex(i: number, count: number) {
-  return PADDING_LEFT + (i / (count - 1)) * plotWidth;
+// Catmull-Rom to Bezier smoothing for a nicer line than straight segments.
+function buildSmoothPath(xs: number[], ys: number[]): string {
+  if (xs.length === 0) return '';
+  if (xs.length === 1) return `M${xs[0]},${ys[0]}`;
+
+  let d = `M${xs[0]},${ys[0]}`;
+  for (let i = 0; i < xs.length - 1; i++) {
+    const x0 = xs[i - 1] ?? xs[i];
+    const y0 = ys[i - 1] ?? ys[i];
+    const x1 = xs[i];
+    const y1 = ys[i];
+    const x2 = xs[i + 1];
+    const y2 = ys[i + 1];
+    const x3 = xs[i + 2] ?? x2;
+    const y3 = ys[i + 2] ?? y2;
+
+    const cp1x = x1 + (x2 - x0) / 6;
+    const cp1y = y1 + (y2 - y0) / 6;
+    const cp2x = x2 - (x3 - x1) / 6;
+    const cp2y = y2 - (y3 - y1) / 6;
+
+    d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${x2},${y2}`;
+  }
+  return d;
 }
 
-function toScaledPoints(values: number[], min: number, max: number) {
-  return values
-    .map((v, i) => `${xForIndex(i, values.length)},${scaleY(v, min, max)}`)
-    .join(' ');
+function makeScale(min: number, max: number) {
+  const span = max - min || 1;
+  return (value: number) => PLOT_TOP + (1 - (value - min) / span) * CHART_HEIGHT;
 }
 
-function indexFromX(x: number, count: number) {
-  const clampedX = Math.max(PADDING_LEFT, Math.min(CHART_WIDTH - PADDING_RIGHT, x));
-  const ratio = (clampedX - PADDING_LEFT) / plotWidth;
-  return Math.round(ratio * (count - 1));
-}
-
-export default function WeatherGraphCard({ data, bestTimeIndex }: Props) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [visible, setVisible] = useState<Record<SeriesKey, boolean>>({
+export default function WeatherGraphCard({ data }: Props) {
+  const [visible, setVisible] = useState<Record<MetricKey, boolean>>({
     feelsLike: true,
     humidity: true,
-    rainChance: true,
     wind: true,
+    rainChance: true,
   });
 
-  const feelsLikeValues = data.map(d => d.feelsLike);
-  const feelsLikeMin = Math.floor(Math.min(...feelsLikeValues) - 3);
-  const feelsLikeMax = Math.ceil(Math.max(...feelsLikeValues) + 3);
+  const [tooltip, setTooltip] = useState<{
+    hour: string;
+    values: Record<MetricKey, number>;
+  } | null>(null);
 
-  const humidityPoints = useMemo(
-    () => toScaledPoints(data.map(d => d.humidity), 0, 100),
-    [data]
-  );
-  const feelsLikePoints = useMemo(
-    () => toScaledPoints(feelsLikeValues, feelsLikeMin, feelsLikeMax),
-    [data, feelsLikeMin, feelsLikeMax]
-  );
+  const selectedIdx = useSharedValue(-1);
 
-  const windValues = data.map(d => d.wind);
-  const windMin = Math.floor(Math.min(...windValues, 0));
-  const windMax = Math.ceil(Math.max(...windValues) + 2);
-  const windPoints = useMemo(
-    () => toScaledPoints(windValues, windMin, windMax),
-    [data, windMin, windMax]
-  );
+  const toggleMetric = (key: MetricKey) => {
+    setVisible((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
-  const barWidth = plotWidth / data.length;
-  const bestTimeX =
-    bestTimeIndex != null ? xForIndex(bestTimeIndex, data.length) : null;
+  // ---- Compute scales & pixel points (recomputed only when data changes) ----
+  const { xs, pointsByMetric, axisLabels } = useMemo(() => {
+    if (!data.length) {
+      return { xs: [] as number[], pointsByMetric: {} as Record<MetricKey, number[]>, axisLabels: null };
+    }
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: evt => {
-        setActiveIndex(indexFromX(evt.nativeEvent.locationX, data.length));
+    const n = data.length;
+    const xs = data.map((_, i) => LEFT_PAD + (i / (n - 1 || 1)) * CHART_WIDTH);
+
+    const feelsLikeVals = data.map((d) => d.feelsLike);
+    const windVals = data.map((d) => d.wind);
+
+    const tempMin = Math.floor(Math.min(...feelsLikeVals)) - 2;
+    const tempMax = Math.ceil(Math.max(...feelsLikeVals)) + 2;
+    const windMin = 0;
+    const windMax = Math.ceil(Math.max(...windVals)) + 2;
+
+    const percentScale = makeScale(0, 100);
+    const tempScale = makeScale(tempMin, tempMax);
+    const windScale = makeScale(windMin, windMax);
+
+    const scaleFor = (axis: AxisKey) =>
+      axis === 'percent' ? percentScale : axis === 'temp' ? tempScale : windScale;
+
+    const pointsByMetric = {} as Record<MetricKey, number[]>;
+    METRICS.forEach((m) => {
+      const scale = scaleFor(m.axis);
+      pointsByMetric[m.key] = data.map((d) => scale(d[m.key]));
+    });
+
+    return {
+      xs,
+      pointsByMetric,
+      axisLabels: {
+        tempMin,
+        tempMax,
+        windMin,
+        windMax,
       },
-      onPanResponderMove: evt => {
-        setActiveIndex(indexFromX(evt.nativeEvent.locationX, data.length));
+    };
+  }, [data]);
+
+  const xsShared = useSharedValue<number[]>([]);
+  const pointsShared = useSharedValue<Record<MetricKey, number[]>>({
+    feelsLike: [],
+    humidity: [],
+    wind: [],
+    rainChance: [],
+  });
+
+  React.useEffect(() => {
+    xsShared.value = xs;
+    pointsShared.value = pointsByMetric;
+  }, [xs, pointsByMetric]);
+
+  const updateTooltip = (idx: number) => {
+    if (idx < 0 || idx >= data.length) {
+      setTooltip(null);
+      return;
+    }
+    const point = data[idx];
+    setTooltip({
+      hour: formatHour(point.time),
+      values: {
+        feelsLike: point.feelsLike,
+        humidity: point.humidity,
+        wind: point.wind,
+        rainChance: point.rainChance,
       },
-      onPanResponderRelease: () => setActiveIndex(null),
-      onPanResponderTerminate: () => setActiveIndex(null),
+    });
+  };
+
+  const clearTooltip = () => setTooltip(null);
+
+  const panGesture = Gesture.Pan()
+    .activateAfterLongPress(250)
+    .onStart((e) => {
+      const n = xsShared.value.length;
+      if (n === 0) return;
+      const relativeX = e.x - LEFT_PAD;
+      const step = CHART_WIDTH / (n - 1 || 1);
+      const idx = Math.min(n - 1, Math.max(0, Math.round(relativeX / step)));
+      selectedIdx.value = idx;
+      runOnJS(updateTooltip)(idx);
     })
-  ).current;
+    .onUpdate((e) => {
+      const n = xsShared.value.length;
+      if (n === 0) return;
+      const relativeX = e.x - LEFT_PAD;
+      const step = CHART_WIDTH / (n - 1 || 1);
+      const idx = Math.min(n - 1, Math.max(0, Math.round(relativeX / step)));
+      if (idx !== selectedIdx.value) {
+        selectedIdx.value = idx;
+        runOnJS(updateTooltip)(idx);
+      }
+    })
+    .onEnd(() => {
+      selectedIdx.value = -1;
+      runOnJS(clearTooltip)();
+    })
+    .onFinalize(() => {
+      selectedIdx.value = -1;
+      runOnJS(clearTooltip)();
+    });
 
-  if (data.length === 0) return null;
+  const indicatorProps = useAnimatedProps(() => {
+    const idx = selectedIdx.value;
+    const x = idx >= 0 ? xsShared.value[idx] : -100;
+    return { x1: x, x2: x, opacity: idx >= 0 ? 1 : 0 };
+  });
 
-  const activePoint = activeIndex != null ? data[activeIndex] : null;
-  const activeX = activeIndex != null ? xForIndex(activeIndex, data.length) : null;
+  const dotProps = (key: MetricKey) =>
+    useAnimatedProps(() => {
+      const idx = selectedIdx.value;
+      if (idx < 0) return { cx: -100, cy: -100, opacity: 0 };
+      const x = xsShared.value[idx];
+      const y = pointsShared.value[key]?.[idx];
+      return { cx: x ?? -100, cy: y ?? -100, opacity: visible[key] ? 1 : 0 };
+    });
 
-  // Keep the tooltip on-screen by flipping it to the left of the touch
-  // point when it would otherwise overflow the right edge of the chart.
-  const tooltipX =
-    activeX != null
-      ? Math.min(
-          Math.max(activeX - TOOLTIP_WIDTH / 2, 2),
-          CHART_WIDTH - TOOLTIP_WIDTH - 2
-        )
-      : 0;
+  const feelsLikeDotProps = dotProps('feelsLike');
+  const humidityDotProps = dotProps('humidity');
+  const windDotProps = dotProps('wind');
+  const rainDotProps = dotProps('rainChance');
+  const dotPropsMap: Record<MetricKey, ReturnType<typeof dotProps>> = {
+    feelsLike: feelsLikeDotProps,
+    humidity: humidityDotProps,
+    wind: windDotProps,
+    rainChance: rainDotProps,
+  };
 
-  function toggleSeries(key: SeriesKey) {
-    setVisible(prev => ({ ...prev, [key]: !prev[key] }));
+  const hourLabelIndices = useMemo(() => {
+    if (!data.length) return [];
+    const step = 4;
+    const indices: number[] = [];
+    for (let i = 0; i < data.length; i += step) indices.push(i);
+    if (indices[indices.length - 1] !== data.length - 1) {
+      indices.push(data.length - 1);
+    }
+    return indices;
+  }, [data]);
+
+  if (!data.length) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>24-Hour Outlook</Text>
+        <Text style={styles.placeholder}>Loading hourly data…</Text>
+      </View>
+    );
   }
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Tomorrow's Trends</Text>
+      <Text style={styles.cardTitle}>24-Hour Outlook</Text>
 
-      <View style={styles.legendRow}>
-        {(Object.keys(SERIES_META) as SeriesKey[]).map(key => (
-          <LegendToggle
-            key={key}
-            color={SERIES_META[key].color}
-            label={SERIES_META[key].label}
-            shape={SERIES_META[key].shape}
-            active={visible[key]}
-            onPress={() => toggleSeries(key)}
-          />
-        ))}
-      </View>
-
-      <View style={{ width: CHART_WIDTH, height: CHART_HEIGHT }} {...panResponder.panHandlers}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          {/* Rain chance as a shaded background band per hour */}
-          {visible.rainChance &&
-            data.map((d, i) => (
-              <Rect
-                key={`rain-${i}`}
-                x={PADDING_LEFT + i * barWidth}
-                y={PADDING_TOP}
-                width={barWidth}
-                height={plotHeight}
-                fill={SERIES_META.rainChance.color}
-                opacity={(d.rainChance / 100) * 0.35}
-              />
-            ))}
-
-          {/* Axis reference lines */}
-          <Line
-            x1={PADDING_LEFT}
-            y1={PADDING_TOP}
-            x2={PADDING_LEFT}
-            y2={CHART_HEIGHT - PADDING_BOTTOM}
-            stroke="#ddd"
-            strokeWidth={1}
-          />
-          <Line
-            x1={CHART_WIDTH - PADDING_RIGHT}
-            y1={PADDING_TOP}
-            x2={CHART_WIDTH - PADDING_RIGHT}
-            y2={CHART_HEIGHT - PADDING_BOTTOM}
-            stroke="#ddd"
-            strokeWidth={1}
-          />
-
-          {/* Left axis labels (feels-like temp) */}
-          {visible.feelsLike && (
-            <>
-              <SvgText x={4} y={PADDING_TOP + 4} fontSize={10} fill={SERIES_META.feelsLike.color}>
-                {feelsLikeMax}°
-              </SvgText>
-              <SvgText x={4} y={CHART_HEIGHT - PADDING_BOTTOM} fontSize={10} fill={SERIES_META.feelsLike.color}>
-                {feelsLikeMin}°
-              </SvgText>
-            </>
-          )}
-
-          {/* Right axis labels (humidity %) */}
-          {visible.humidity && (
-            <>
-              <SvgText x={CHART_WIDTH - 28} y={PADDING_TOP + 4} fontSize={10} fill={SERIES_META.humidity.color}>
-                100%
-              </SvgText>
-              <SvgText x={CHART_WIDTH - 24} y={CHART_HEIGHT - PADDING_BOTTOM} fontSize={10} fill={SERIES_META.humidity.color}>
-                0%
-              </SvgText>
-            </>
-          )}
-
-          {visible.feelsLike && (
-            <Polyline points={feelsLikePoints} fill="none" stroke={SERIES_META.feelsLike.color} strokeWidth={2} />
-          )}
-          {visible.humidity && (
-            <Polyline points={humidityPoints} fill="none" stroke={SERIES_META.humidity.color} strokeWidth={2} />
-          )}
-          {visible.wind && (
-            <Polyline points={windPoints} fill="none" stroke={SERIES_META.wind.color} strokeWidth={2} strokeDasharray="5,3" />
-          )}
-
-          {bestTimeX != null && (
-            <>
-              <Line
-                x1={bestTimeX}
-                y1={PADDING_TOP}
-                x2={bestTimeX}
-                y2={CHART_HEIGHT - PADDING_BOTTOM}
-                stroke="#111"
-                strokeWidth={2}
-                strokeDasharray="4,4"
-              />
-              <SvgText x={bestTimeX} y={PADDING_TOP - 4} fontSize={11} fill="#111" textAnchor="middle">
-                Best time
-              </SvgText>
-            </>
-          )}
-
-          {/* Touch indicator: vertical guide + dots on each visible series */}
-          {activeIndex != null && activeX != null && (
-            <>
-              <Line
-                x1={activeX}
-                y1={PADDING_TOP}
-                x2={activeX}
-                y2={CHART_HEIGHT - PADDING_BOTTOM}
-                stroke="#999"
-                strokeWidth={1}
-                strokeDasharray="3,3"
-              />
-              {visible.feelsLike && (
-                <Circle
-                  cx={activeX}
-                  cy={scaleY(data[activeIndex].feelsLike, feelsLikeMin, feelsLikeMax)}
-                  r={4}
-                  fill={SERIES_META.feelsLike.color}
-                  stroke="white"
-                  strokeWidth={1.5}
-                />
-              )}
-              {visible.humidity && (
-                <Circle
-                  cx={activeX}
-                  cy={scaleY(data[activeIndex].humidity, 0, 100)}
-                  r={4}
-                  fill={SERIES_META.humidity.color}
-                  stroke="white"
-                  strokeWidth={1.5}
-                />
-              )}
-              {visible.wind && (
-                <Circle
-                  cx={activeX}
-                  cy={scaleY(data[activeIndex].wind, windMin, windMax)}
-                  r={4}
-                  fill={SERIES_META.wind.color}
-                  stroke="white"
-                  strokeWidth={1.5}
-                />
-              )}
-            </>
-          )}
-        </Svg>
-
-        {activePoint && (
-          <View style={[styles.tooltip, { left: tooltipX, top: 4 }]} pointerEvents="none">
-            <Text style={styles.tooltipTime}>{formatHour(activePoint.time)}</Text>
-            {visible.feelsLike && (
-              <TooltipRow color={SERIES_META.feelsLike.color} label="Feels like" value={`${activePoint.feelsLike}°`} />
-            )}
-            {visible.humidity && (
-              <TooltipRow color={SERIES_META.humidity.color} label="Humidity" value={`${activePoint.humidity}%`} />
-            )}
-            {visible.rainChance && (
-              <TooltipRow color={SERIES_META.rainChance.color} label="Rain" value={`${activePoint.rainChance}%`} />
-            )}
-            {visible.wind && (
-              <TooltipRow color={SERIES_META.wind.color} label="Wind" value={`${activePoint.wind} mph`} />
-            )}
-          </View>
+      {/* Fixed-position tooltip panel — never overlaps the chart */}
+      <View style={styles.tooltipPanel}>
+        {tooltip ? (
+          <>
+            <Text style={styles.tooltipHour}>{tooltip.hour}</Text>
+            <View style={styles.tooltipRow}>
+              {METRICS.map((m) => (
+                <View key={m.key} style={styles.tooltipItem}>
+                  <View style={[styles.dot, { backgroundColor: m.color }]} />
+                  <Text style={styles.tooltipValue}>
+                    {Math.round(tooltip.values[m.key])}
+                    {m.unit}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : (
+          <Text style={styles.placeholder}>Hold and drag the chart to inspect an hour</Text>
         )}
       </View>
 
-      <View style={styles.axisRow}>
-        <Text style={styles.axisLabel}>{formatHour(data[0].time)}</Text>
-        <Text style={styles.axisLabel}>
-          {formatHour(data[Math.floor(data.length / 2)].time)}
-        </Text>
-        <Text style={styles.axisLabel}>{formatHour(data[data.length - 1].time)}</Text>
+      <GestureDetector gesture={panGesture}>
+        <View style={styles.chartWrapper}>
+          <Svg width={SCREEN_WIDTH - CARD_PADDING * 2} height={TOP_PAD + CHART_HEIGHT + BOTTOM_PAD}>
+            {/* Percent gridlines (25/50/75) */}
+            {[25, 50, 75].map((pct) => {
+              const y = PLOT_TOP + (1 - pct / 100) * CHART_HEIGHT;
+              return (
+                <Line
+                  key={pct}
+                  x1={LEFT_PAD}
+                  x2={LEFT_PAD + CHART_WIDTH}
+                  y1={y}
+                  y2={y}
+                  stroke="#E5E9F0"
+                  strokeWidth={1}
+                />
+              );
+            })}
+
+            {/* Left axis (percent) labels */}
+            <SvgText x={4} y={PLOT_TOP + 4} fontSize={10} fill="#9AA3B2">
+              100%
+            </SvgText>
+            <SvgText x={4} y={PLOT_BOTTOM} fontSize={10} fill="#9AA3B2">
+              0%
+            </SvgText>
+
+            {/* Right axis (temp / wind) labels */}
+            {axisLabels && (
+              <>
+                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_TOP + 4} fontSize={10} fill="#3B82F6">
+                  {axisLabels.tempMax}°
+                </SvgText>
+                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_BOTTOM} fontSize={10} fill="#3B82F6">
+                  {axisLabels.tempMin}°
+                </SvgText>
+                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_TOP + 18} fontSize={10} fill="#F59E0B">
+                  {axisLabels.windMax}mph
+                </SvgText>
+                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_BOTTOM - 14} fontSize={10} fill="#F59E0B">
+                  {axisLabels.windMin}mph
+                </SvgText>
+              </>
+            )}
+
+            {/* Hour labels */}
+            {hourLabelIndices.map((i) => (
+              <SvgText
+                key={i}
+                x={xs[i]}
+                y={PLOT_BOTTOM + 18}
+                fontSize={10}
+                fill="#9AA3B2"
+                textAnchor="middle"
+              >
+                {formatHour(data[i].time)}
+              </SvgText>
+            ))}
+
+            {/* Metric lines */}
+            {METRICS.map((m) =>
+              visible[m.key] ? (
+                <Path
+                  key={m.key}
+                  d={buildSmoothPath(xs, pointsByMetric[m.key])}
+                  stroke={m.color}
+                  strokeWidth={2.5}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : null
+            )}
+
+            {/* Drag indicator line */}
+            <AnimatedLine
+              animatedProps={indicatorProps}
+              y1={PLOT_TOP}
+              y2={PLOT_BOTTOM}
+              stroke="#B8C0CC"
+              strokeWidth={1.5}
+              strokeDasharray="4,4"
+            />
+
+            {/* Drag indicator dots per active metric */}
+            {METRICS.map((m) => (
+              <AnimatedCircle
+                key={m.key}
+                animatedProps={dotPropsMap[m.key]}
+                r={5}
+                fill={m.color}
+                stroke="white"
+                strokeWidth={2}
+              />
+            ))}
+          </Svg>
+        </View>
+      </GestureDetector>
+
+      {/* Legend / toggles */}
+      <View style={styles.legendRow}>
+        {METRICS.map((m) => {
+          const active = visible[m.key];
+          return (
+            <Pressable
+              key={m.key}
+              onPress={() => toggleMetric(m.key)}
+              style={[styles.legendItem, !active && styles.legendItemInactive]}
+            >
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: active ? m.color : '#CBD2DB' },
+                ]}
+              />
+              <Text style={[styles.legendLabel, !active && styles.legendLabelInactive]}>
+                {m.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
-
-      {activeIndex == null && (
-        <Text style={styles.hint}>Touch and drag the chart to see values</Text>
-      )}
     </View>
   );
-}
-
-function LegendToggle({
-  color,
-  label,
-  shape,
-  active,
-  onPress,
-}: {
-  color: string;
-  label: string;
-  shape: 'line' | 'band';
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable style={styles.legendItem} onPress={onPress} hitSlop={6}>
-      <View
-        style={[
-          shape === 'line' ? styles.dot : styles.swatch,
-          { backgroundColor: color, opacity: active ? 1 : 0.25 },
-        ]}
-      />
-      <Text style={[styles.legendLabel, !active && styles.legendLabelOff]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function TooltipRow({ color, label, value }: { color: string; label: string; value: string }) {
-  return (
-    <View style={styles.tooltipRow}>
-      <View style={[styles.tooltipDot, { backgroundColor: color }]} />
-      <Text style={styles.tooltipLabel}>{label}</Text>
-      <Text style={styles.tooltipValue}>{value}</Text>
-    </View>
-  );
-}
-
-function formatHour(isoTime: string) {
-  const date = new Date(isoTime);
-  return date.toLocaleTimeString([], { hour: 'numeric' });
 }
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: 'white',
     borderRadius: 18,
-    padding: 20,
-    marginTop: 25,
+    padding: CARD_PADDING,
+    marginBottom: 10,
   },
-  title: {
+
+  cardTitle: {
     fontSize: 22,
     fontWeight: '600',
     marginBottom: 12,
   },
-  legendRow: {
+
+  tooltipPanel: {
+    minHeight: 48,
+    justifyContent: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+
+  tooltipHour: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 4,
+  },
+
+  tooltipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 12,
   },
-  legendItem: {
+
+  tooltipItem: {
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 16,
-    marginBottom: 4,
+    marginBottom: 2,
   },
+
+  tooltipValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+
+  placeholder: {
+    fontSize: 13,
+    color: '#9AA3B2',
+    fontStyle: 'italic',
+  },
+
+  chartWrapper: {
+    alignSelf: 'stretch',
+  },
+
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     marginRight: 6,
   },
-  swatch: {
-    width: 12,
-    height: 8,
-    borderRadius: 2,
-    marginRight: 6,
-  },
-  legendLabel: {
-    fontSize: 13,
-    color: '#666',
-  },
-  legendLabelOff: {
-    color: '#bbb',
-    textDecorationLine: 'line-through',
-  },
-  axisRow: {
+
+  legendRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-    paddingHorizontal: PADDING_LEFT,
+    flexWrap: 'wrap',
+    marginTop: 10,
   },
-  axisLabel: {
-    fontSize: 12,
-    color: '#999',
-  },
-  hint: {
-    fontSize: 11,
-    color: '#bbb',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  tooltip: {
-    position: 'absolute',
-    width: TOOLTIP_WIDTH,
-    minHeight: TOOLTIP_HEIGHT,
-    backgroundColor: 'rgba(17,17,17,0.92)',
-    borderRadius: 10,
-    padding: 8,
-  },
-  tooltipTime: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  tooltipRow: {
+
+  legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
+    marginRight: 16,
+    marginBottom: 6,
+    paddingVertical: 2,
   },
-  tooltipDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
+
+  legendItemInactive: {
+    opacity: 0.5,
   },
-  tooltipLabel: {
-    color: '#ccc',
-    fontSize: 11,
-    flex: 1,
+
+  legendLabel: {
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '500',
   },
-  tooltipValue: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: '600',
+
+  legendLabelInactive: {
+    color: '#9AA3B2',
   },
 });
