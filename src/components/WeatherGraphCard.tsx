@@ -7,21 +7,17 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
-
-// ---- Types (matches the shape produced in HomeScreen) ----
-type HourlyPoint = {
-  time: string;
-  feelsLike: number;
-  humidity: number;
-  rainChance: number;
-  wind: number;
-};
+import { HourlyPoint } from '../types/weather';
 
 type MetricKey = 'feelsLike' | 'humidity' | 'wind' | 'rainChance';
 type AxisKey = 'percent' | 'temp' | 'wind';
 
 type Props = {
   data: HourlyPoint[];
+  // The "HH:MM" portion of the scored best-run hour (as produced by
+  // bestRunHour(...).time.split('T')[1]). When provided, the chart
+  // defaults its selection/tooltip to this hour instead of sitting empty.
+  bestTime?: string | null;
 };
 
 // ---- Animated SVG primitives ----
@@ -95,7 +91,7 @@ function makeScale(min: number, max: number) {
   return (value: number) => PLOT_TOP + (1 - (value - min) / span) * CHART_HEIGHT;
 }
 
-export default function WeatherGraphCard({ data }: Props) {
+export default function WeatherGraphCard({ data, bestTime }: Props) {
   const [visible, setVisible] = useState<Record<MetricKey, boolean>>({
     feelsLike: true,
     humidity: true,
@@ -106,6 +102,7 @@ export default function WeatherGraphCard({ data }: Props) {
   const [tooltip, setTooltip] = useState<{
     hour: string;
     values: Record<MetricKey, number>;
+    isBest: boolean;
   } | null>(null);
 
   const selectedIdx = useSharedValue(-1);
@@ -156,6 +153,12 @@ export default function WeatherGraphCard({ data }: Props) {
     };
   }, [data]);
 
+  // Index of the scored best-run hour within `data`, or -1 if unknown/not found.
+  const bestIndex = useMemo(() => {
+    if (!bestTime || !data.length) return -1;
+    return data.findIndex((d) => d.time.split('T')[1] === bestTime);
+  }, [data, bestTime]);
+
   const xsShared = useSharedValue<number[]>([]);
   const pointsShared = useSharedValue<Record<MetricKey, number[]>>({
     feelsLike: [],
@@ -177,6 +180,7 @@ export default function WeatherGraphCard({ data }: Props) {
     const point = data[idx];
     setTooltip({
       hour: formatHour(point.time),
+      isBest: idx === bestIndex,
       values: {
         feelsLike: point.feelsLike,
         humidity: point.humidity,
@@ -187,6 +191,15 @@ export default function WeatherGraphCard({ data }: Props) {
   };
 
   const clearTooltip = () => setTooltip(null);
+
+  // Default the chart to "pressed down" on the best-run hour as soon as
+  // it's known, instead of starting empty.
+  React.useEffect(() => {
+    if (bestIndex >= 0 && xs.length > 0) {
+      selectedIdx.value = bestIndex;
+      updateTooltip(bestIndex);
+    }
+  }, [bestIndex, xs.length]);
 
   const panGesture = Gesture.Pan()
     .activateAfterLongPress(250)
@@ -211,12 +224,22 @@ export default function WeatherGraphCard({ data }: Props) {
       }
     })
     .onEnd(() => {
-      selectedIdx.value = -1;
-      runOnJS(clearTooltip)();
+      if (bestIndex >= 0) {
+        selectedIdx.value = bestIndex;
+        runOnJS(updateTooltip)(bestIndex);
+      } else {
+        selectedIdx.value = -1;
+        runOnJS(clearTooltip)();
+      }
     })
     .onFinalize(() => {
-      selectedIdx.value = -1;
-      runOnJS(clearTooltip)();
+      if (bestIndex >= 0) {
+        selectedIdx.value = bestIndex;
+        runOnJS(updateTooltip)(bestIndex);
+      } else {
+        selectedIdx.value = -1;
+        runOnJS(clearTooltip)();
+      }
     });
 
   const indicatorProps = useAnimatedProps(() => {
@@ -273,7 +296,14 @@ export default function WeatherGraphCard({ data }: Props) {
       <View style={styles.tooltipPanel}>
         {tooltip ? (
           <>
-            <Text style={styles.tooltipHour}>{tooltip.hour}</Text>
+            <View style={styles.tooltipHeaderRow}>
+              <Text style={styles.tooltipHour}>{tooltip.hour}</Text>
+              {tooltip.isBest && (
+                <View style={styles.bestBadge}>
+                  <Text style={styles.bestBadgeText}>Best time to run</Text>
+                </View>
+              )}
+            </View>
             <View style={styles.tooltipRow}>
               {METRICS.map((m) => (
                 <View key={m.key} style={styles.tooltipItem}>
@@ -438,11 +468,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
 
+  tooltipHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+
   tooltipHour: {
     fontSize: 13,
     fontWeight: '700',
     color: '#333',
-    marginBottom: 4,
+    marginRight: 8,
+  },
+
+  bestBadge: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+
+  bestBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'white',
   },
 
   tooltipRow: {
