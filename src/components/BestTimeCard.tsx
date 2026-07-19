@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { formatTimeLabel } from '../utils/time';
 
 type Props = {
   city: string | null;
@@ -14,7 +15,7 @@ export default function BestTimeCard({ city, state, bestTime }: Props) {
       </Text>
 
       <View style={styles.mainCard}>
-        <Text style={styles.time}> {bestTime}</Text>
+        <Text style={styles.time}> {formatTimeLabel(bestTime) ?? "--"}</Text>
         <Text style={styles.subtitle}>Cool temperatures and low wind</Text>
       </View>
     </>
