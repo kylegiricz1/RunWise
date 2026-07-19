@@ -1,8 +1,10 @@
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
+import { useRunPreferences } from '../context/RunPreferencesContext';
 import { fetchForecast } from '../services/weatherApi';
 import { getConditionText } from '../services/weatherApi/conditions';
 import { bestRunHour } from '../services/weatherScoring/score';
+import { filterHoursByWindows } from '../services/weatherScoring/timeWindowFilter';
 import { HourlyPoint, WeatherData } from '../types/weather';
 
 type UseWeatherDataResult = {
@@ -16,6 +18,7 @@ type UseWeatherDataResult = {
 };
 
 export function useWeatherData(): UseWeatherDataResult {
+  const { activeWindows } = useRunPreferences();
   const [city, setCity] = useState<string | null>(null);
   const [state, setState] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -44,6 +47,8 @@ export function useWeatherData(): UseWeatherDataResult {
 
         const { latitude, longitude } = currentLocation.coords;
 
+        // Reverse geocoding can fail/throw on some platforms (e.g. web) —
+        // don't let it block the weather fetch below.
         try {
           const address = await Location.reverseGeocodeAsync({
             latitude,
@@ -83,8 +88,6 @@ export function useWeatherData(): UseWeatherDataResult {
           });
         }
         setHourlyData(hourly);
-
-        setBestTime(bestRunHour(hourly).time.split('T')[1]);
       } catch (err) {
         console.log('Location error:', err);
         setError(err instanceof Error ? err.message : 'Failed to load weather');
@@ -95,6 +98,15 @@ export function useWeatherData(): UseWeatherDataResult {
 
     loadWeather();
   }, []);
+
+  // Re-score whenever the forecast loads or the person's preferred run
+  // windows change (e.g. after editing them in Settings). If no windows
+  // are selected, filterHoursByWindows returns the full day unfiltered.
+  useEffect(() => {
+    if (hourlyData.length === 0) return;
+    const candidates = filterHoursByWindows(hourlyData, activeWindows);
+    setBestTime(bestRunHour(candidates).time.split('T')[1]);
+  }, [hourlyData, activeWindows]);
 
   return { city, state, weather, hourlyData, bestTime, loading, error };
 }
