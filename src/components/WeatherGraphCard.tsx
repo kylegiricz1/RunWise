@@ -192,11 +192,12 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
 
   const clearTooltip = () => setTooltip(null);
 
-  // Default the chart to "pressed down" on the best-run hour as soon as
-  // it's known, instead of starting empty.
+  // Default the tooltip to the best-run hour as soon as it's known, so the
+  // panel isn't empty on load — the drag indicator itself stays hidden
+  // until the user actually touches the chart (see the static best-time
+  // line rendered separately below).
   React.useEffect(() => {
     if (bestIndex >= 0 && xs.length > 0) {
-      selectedIdx.value = bestIndex;
       updateTooltip(bestIndex);
     }
   }, [bestIndex, xs.length]);
@@ -224,20 +225,18 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
       }
     })
     .onEnd(() => {
+      selectedIdx.value = -1;
       if (bestIndex >= 0) {
-        selectedIdx.value = bestIndex;
         runOnJS(updateTooltip)(bestIndex);
       } else {
-        selectedIdx.value = -1;
         runOnJS(clearTooltip)();
       }
     })
     .onFinalize(() => {
+      selectedIdx.value = -1;
       if (bestIndex >= 0) {
-        selectedIdx.value = bestIndex;
         runOnJS(updateTooltip)(bestIndex);
       } else {
-        selectedIdx.value = -1;
         runOnJS(clearTooltip)();
       }
     });
@@ -395,7 +394,34 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
               ) : null
             )}
 
-            {/* Drag indicator line */}
+            {/* Persistent best-time line — solid, always visible, unaffected by dragging */}
+            {bestIndex >= 0 && xs[bestIndex] !== undefined && (
+              <>
+                <Line
+                  x1={xs[bestIndex]}
+                  x2={xs[bestIndex]}
+                  y1={PLOT_TOP}
+                  y2={PLOT_BOTTOM}
+                  stroke="#3B82F6"
+                  strokeWidth={2}
+                />
+                {METRICS.map((m) =>
+                  visible[m.key] ? (
+                    <Circle
+                      key={`best-${m.key}`}
+                      cx={xs[bestIndex]}
+                      cy={pointsByMetric[m.key][bestIndex]}
+                      r={5}
+                      fill={m.color}
+                      stroke="white"
+                      strokeWidth={2}
+                    />
+                  ) : null
+                )}
+              </>
+            )}
+
+            {/* Drag indicator line — dashed, only visible while actively dragging */}
             <AnimatedLine
               animatedProps={indicatorProps}
               y1={PLOT_TOP}
