@@ -3,6 +3,7 @@ import { WeatherData } from '../types/weather';
 
 type Props = {
   weather: WeatherData | null;
+  dayLabel: string; // e.g. "Today", "Tomorrow", "Thursday"
 };
 
 const ROWS: { label: string; key: keyof WeatherData }[] = [
@@ -14,10 +15,10 @@ const ROWS: { label: string; key: keyof WeatherData }[] = [
   { label: 'Rain Chance', key: 'rainChance' },
 ];
 
-export default function WeatherDetailsCard({ weather }: Props) {
+export default function WeatherDetailsCard({ weather, dayLabel }: Props) {
   return (
     <View style={styles.weatherCard}>
-      <Text style={styles.cardTitle}>Tomorrow's Weather</Text>
+      <Text style={styles.cardTitle}>{dayLabel}'s Weather</Text>
 
       {ROWS.map(({ label, key }) => (
         <View key={key} style={styles.row}>
