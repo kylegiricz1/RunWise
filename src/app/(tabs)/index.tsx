@@ -1,21 +1,50 @@
 import { ScrollView, StyleSheet, Text } from 'react-native';
 import BestTimeCard from '../../components/BestTimeCard';
+import DaySelector from '../../components/DaySelector';
 import WeatherDetailsCard from '../../components/WeatherDetailsCard';
 import WeatherGraphCard from '../../components/WeatherGraphCard';
 import { useWeatherData } from '../../hooks/useWeatherData';
+import { getDayLabel } from '../../utils/date';
 
 export default function HomeScreen() {
-  const { city, state, weather, hourlyData, bestTime } = useWeatherData();
+  const {
+    city,
+    state,
+    weather,
+    hourlyData,
+    bestTime,
+    days,
+    selectedDayIndex,
+    selectDay,
+    goToPreviousDay,
+    goToNextDay,
+    canGoPreviousDay,
+    canGoNextDay,
+  } = useWeatherData();
+
+  const dayLabel =
+    days.length > 0 ? getDayLabel(selectedDayIndex, days[selectedDayIndex].date) : '';
 
   return (
     <ScrollView style={styles.container}>
+      
       <Text style={styles.greeting}>Good Afternoon</Text>
 
-      <BestTimeCard city={city} state={state} bestTime={bestTime} />
+      <BestTimeCard city={city} state={state} bestTime={bestTime} dayLabel={dayLabel} />
 
+      <DaySelector
+        dates={days.map((d) => d.date)}
+        selectedIndex={selectedDayIndex}
+        onSelect={selectDay}
+        onPrevious={goToPreviousDay}
+        onNext={goToNextDay}
+        canGoPrevious={canGoPreviousDay}
+        canGoNext={canGoNextDay}
+      />
+      
       <WeatherGraphCard data={hourlyData} bestTime={bestTime} />
 
-      <WeatherDetailsCard weather={weather} />
+      <WeatherDetailsCard weather={weather} dayLabel={dayLabel} />
     </ScrollView>
   );
 }

@@ -1,4 +1,3 @@
-
 export type WeatherData = {
   temperature: string;
   feelsLike: string;
@@ -14,4 +13,10 @@ export type HourlyPoint = {
   humidity: number;
   rainChance: number;
   wind: number;
+};
+
+export type DayForecast = {
+  date: string;
+  weather: WeatherData;
+  hourly: HourlyPoint[];
 };
