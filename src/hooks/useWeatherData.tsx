@@ -1,11 +1,11 @@
 import * as Location from 'expo-location';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRunPreferences } from '../context/RunPreferencesContext';
 import { fetchForecast } from '../services/weatherApi';
 import { getConditionText } from '../services/weatherApi/conditions';
 import { bestRunHour } from '../services/weatherScoring/score';
 import { filterHoursByWindows } from '../services/weatherScoring/timeWindowFilter';
-import { DayForecast, HourlyPoint, WeatherData } from '../types/weather';
+import { DailyBestTime, DayForecast, HourlyPoint, WeatherData } from '../types/weather';
 
 const DEFAULT_DAY_INDEX = 1; // tomorrow, matches the app's original default
 
@@ -15,6 +15,7 @@ type UseWeatherDataResult = {
   weather: WeatherData | null;
   hourlyData: HourlyPoint[];
   bestTime: string | null;
+  dailyBestTimes: DailyBestTime[];
   loading: boolean;
   error: string | null;
 
@@ -128,21 +129,31 @@ export function useWeatherData(): UseWeatherDataResult {
   const weather = selectedDay?.weather ?? null;
   const hourlyData = useMemo(() => selectedDay?.hourly ?? [], [selectedDay]);
 
-  // Re-score whenever the selected day's hours or the person's preferred
-  // run windows change. If no windows are selected, filterHoursByWindows
-  // returns the full day unfiltered.
-  useEffect(() => {
-    if (hourlyData.length === 0) {
-      setBestTime(null);
-      return;
-    }
-    const candidates = filterHoursByWindows(hourlyData, activeWindows);
-    setBestTime(bestRunHour(candidates).time.split('T')[1]);
-  }, [hourlyData, activeWindows]);
+  const dailyBestTimes = useMemo<DailyBestTime[]>(
+    () =>
+      days.map((day) => {
+        if (day.hourly.length === 0) {
+          return { date: day.date, time: null, score: null };
+        }
 
-  const selectDay = (index: number) => {
+        const best = bestRunHour(filterHoursByWindows(day.hourly, activeWindows));
+        return {
+          date: day.date,
+          time: best.time.split('T')[1] ?? null,
+          score: best.score,
+        };
+      }),
+    [activeWindows, days]
+  );
+
+  // Keep the selected-day recommendation in sync with the weekly scores.
+  useEffect(() => {
+    setBestTime(dailyBestTimes[selectedDayIndex]?.time ?? null);
+  }, [dailyBestTimes, selectedDayIndex]);
+
+  const selectDay = useCallback((index: number) => {
     setSelectedDayIndex(Math.min(Math.max(index, 0), days.length - 1));
-  };
+  }, [days.length]);
 
   const goToPreviousDay = () => selectDay(selectedDayIndex - 1);
   const goToNextDay = () => selectDay(selectedDayIndex + 1);
@@ -153,6 +164,7 @@ export function useWeatherData(): UseWeatherDataResult {
     weather,
     hourlyData,
     bestTime,
+    dailyBestTimes,
     loading,
     error,
     days,

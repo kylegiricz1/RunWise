@@ -1,4 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import { StyleSheet, View } from 'react-native';
 import BestTimeCard from '../../components/BestTimeCard';
 import DaySelector from '../../components/DaySelector';
 import WeatherGraphCard from '../../components/WeatherGraphCard';
@@ -6,6 +8,7 @@ import { useWeatherData } from '../../hooks/useWeatherData';
 import { getDayLabel } from '../../utils/date';
 
 export default function HomeScreen() {
+  const { day } = useLocalSearchParams<{ day?: string }>();
   const {
     city,
     state,
@@ -23,12 +26,18 @@ export default function HomeScreen() {
   const dayLabel =
     days.length > 0 ? getDayLabel(selectedDayIndex, days[selectedDayIndex].date) : '';
 
+  useEffect(() => {
+    const dayIndex = typeof day === 'string' ? Number(day) : NaN;
+    if (Number.isInteger(dayIndex) && dayIndex >= 0 && dayIndex < days.length) {
+      selectDay(dayIndex);
+    }
+  }, [day, days.length, selectDay]);
+
   return (
     <View style={styles.container}>
       <BestTimeCard city={city} state={state} bestTime={bestTime} dayLabel={dayLabel} />
 
       <View style={styles.daySection}>
-        <Text style={styles.sectionLabel}>Choose a run day</Text>
         <DaySelector
           dates={days.map((d) => d.date)}
           selectedIndex={selectedDayIndex}
@@ -57,6 +66,8 @@ const styles = StyleSheet.create({
 
   daySection: {
     gap: 8,
+    backgroundColor: '#9da4b01a',
+    borderRadius: 8,
   },
 
   sectionLabel: {

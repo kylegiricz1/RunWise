@@ -514,7 +514,7 @@ const styles = StyleSheet.create({
   },
 
   bestBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     color: 'white',
   },

@@ -20,3 +20,9 @@ export type DayForecast = {
   weather: WeatherData;
   hourly: HourlyPoint[];
 };
+
+export type DailyBestTime = {
+  date: string;
+  time: string | null;
+  score: number | null;
+};
