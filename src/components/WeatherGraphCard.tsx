@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -39,17 +39,11 @@ const METRICS: {
 ];
 
 // ---- Layout constants ----
-const CARD_PADDING = 20;
-const CHART_HEIGHT = 190;
+const CARD_PADDING = 16;
 const TOP_PAD = 16;
 const BOTTOM_PAD = 26;
 const LEFT_PAD = 34;
 const RIGHT_PAD = 46;
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CHART_WIDTH = SCREEN_WIDTH - CARD_PADDING * 2 - LEFT_PAD - RIGHT_PAD;
-const PLOT_TOP = TOP_PAD;
-const PLOT_BOTTOM = TOP_PAD + CHART_HEIGHT;
 
 function formatHour(isoTime: string): string {
   const timePart = isoTime.split('T')[1] ?? isoTime;
@@ -86,12 +80,18 @@ function buildSmoothPath(xs: number[], ys: number[]): string {
   return d;
 }
 
-function makeScale(min: number, max: number) {
+function makeScale(min: number, max: number, chartHeight: number) {
   const span = max - min || 1;
-  return (value: number) => PLOT_TOP + (1 - (value - min) / span) * CHART_HEIGHT;
+  return (value: number) => TOP_PAD + (1 - (value - min) / span) * chartHeight;
 }
 
 export default function WeatherGraphCard({ data, bestTime }: Props) {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const chartHeight = screenHeight < 740 ? 150 : 210;
+  const cardWidth = screenWidth - 48;
+  const svgWidth = cardWidth - CARD_PADDING * 2;
+  const chartWidth = Math.max(170, svgWidth - LEFT_PAD - RIGHT_PAD);
+  const plotBottom = TOP_PAD + chartHeight;
   const [visible, setVisible] = useState<Record<MetricKey, boolean>>({
     feelsLike: true,
     humidity: true,
@@ -118,7 +118,7 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
     }
 
     const n = data.length;
-    const xs = data.map((_, i) => LEFT_PAD + (i / (n - 1 || 1)) * CHART_WIDTH);
+    const xs = data.map((_, i) => LEFT_PAD + (i / (n - 1 || 1)) * chartWidth);
 
     const feelsLikeVals = data.map((d) => d.feelsLike);
     const windVals = data.map((d) => d.wind);
@@ -128,9 +128,9 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
     const windMin = 0;
     const windMax = Math.ceil(Math.max(...windVals)) + 2;
 
-    const percentScale = makeScale(0, 100);
-    const tempScale = makeScale(tempMin, tempMax);
-    const windScale = makeScale(windMin, windMax);
+    const percentScale = makeScale(0, 100, chartHeight);
+    const tempScale = makeScale(tempMin, tempMax, chartHeight);
+    const windScale = makeScale(windMin, windMax, chartHeight);
 
     const scaleFor = (axis: AxisKey) =>
       axis === 'percent' ? percentScale : axis === 'temp' ? tempScale : windScale;
@@ -151,7 +151,7 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
         windMax,
       },
     };
-  }, [data]);
+  }, [chartHeight, chartWidth, data]);
 
   // Index of the scored best-run hour within `data`, or -1 if unknown/not found.
   const bestIndex = useMemo(() => {
@@ -208,7 +208,7 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
       const n = xsShared.value.length;
       if (n === 0) return;
       const relativeX = e.x - LEFT_PAD;
-      const step = CHART_WIDTH / (n - 1 || 1);
+      const step = chartWidth / (n - 1 || 1);
       const idx = Math.min(n - 1, Math.max(0, Math.round(relativeX / step)));
       selectedIdx.value = idx;
       runOnJS(updateTooltip)(idx);
@@ -217,7 +217,7 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
       const n = xsShared.value.length;
       if (n === 0) return;
       const relativeX = e.x - LEFT_PAD;
-      const step = CHART_WIDTH / (n - 1 || 1);
+      const step = chartWidth / (n - 1 || 1);
       const idx = Math.min(n - 1, Math.max(0, Math.round(relativeX / step)));
       if (idx !== selectedIdx.value) {
         selectedIdx.value = idx;
@@ -322,15 +322,15 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
 
       <GestureDetector gesture={panGesture}>
         <View style={styles.chartWrapper}>
-          <Svg width={SCREEN_WIDTH - CARD_PADDING * 2} height={TOP_PAD + CHART_HEIGHT + BOTTOM_PAD}>
+          <Svg width={svgWidth} height={TOP_PAD + chartHeight + BOTTOM_PAD}>
             {/* Percent gridlines (25/50/75) */}
             {[25, 50, 75].map((pct) => {
-              const y = PLOT_TOP + (1 - pct / 100) * CHART_HEIGHT;
+              const y = TOP_PAD + (1 - pct / 100) * chartHeight;
               return (
                 <Line
                   key={pct}
                   x1={LEFT_PAD}
-                  x2={LEFT_PAD + CHART_WIDTH}
+                  x2={LEFT_PAD + chartWidth}
                   y1={y}
                   y2={y}
                   stroke="#E5E9F0"
@@ -340,26 +340,26 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
             })}
 
             {/* Left axis (percent) labels */}
-            <SvgText x={4} y={PLOT_TOP + 4} fontSize={10} fill="#9AA3B2">
+            <SvgText x={4} y={TOP_PAD + 4} fontSize={10} fill="#9AA3B2">
               100%
             </SvgText>
-            <SvgText x={4} y={PLOT_BOTTOM} fontSize={10} fill="#9AA3B2">
+            <SvgText x={4} y={plotBottom} fontSize={10} fill="#9AA3B2">
               0%
             </SvgText>
 
             {/* Right axis (temp / wind) labels */}
             {axisLabels && (
               <>
-                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_TOP + 4} fontSize={10} fill="#3B82F6">
+                <SvgText x={LEFT_PAD + chartWidth + 6} y={TOP_PAD + 4} fontSize={10} fill="#3B82F6">
                   {axisLabels.tempMax}°
                 </SvgText>
-                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_BOTTOM} fontSize={10} fill="#3B82F6">
+                <SvgText x={LEFT_PAD + chartWidth + 6} y={plotBottom} fontSize={10} fill="#3B82F6">
                   {axisLabels.tempMin}°
                 </SvgText>
-                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_TOP + 18} fontSize={10} fill="#F59E0B">
+                <SvgText x={LEFT_PAD + chartWidth + 6} y={TOP_PAD + 18} fontSize={10} fill="#F59E0B">
                   {axisLabels.windMax}mph
                 </SvgText>
-                <SvgText x={LEFT_PAD + CHART_WIDTH + 6} y={PLOT_BOTTOM - 14} fontSize={10} fill="#F59E0B">
+                <SvgText x={LEFT_PAD + chartWidth + 6} y={plotBottom - 14} fontSize={10} fill="#F59E0B">
                   {axisLabels.windMin}mph
                 </SvgText>
               </>
@@ -370,7 +370,7 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
               <SvgText
                 key={i}
                 x={xs[i]}
-                y={PLOT_BOTTOM + 18}
+                y={plotBottom + 18}
                 fontSize={10}
                 fill="#9AA3B2"
                 textAnchor="middle"
@@ -400,8 +400,8 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
                 <Line
                   x1={xs[bestIndex]}
                   x2={xs[bestIndex]}
-                  y1={PLOT_TOP}
-                  y2={PLOT_BOTTOM}
+                  y1={TOP_PAD}
+                  y2={plotBottom}
                   stroke="#3B82F6"
                   strokeWidth={2}
                 />
@@ -424,8 +424,8 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
             {/* Drag indicator line — dashed, only visible while actively dragging */}
             <AnimatedLine
               animatedProps={indicatorProps}
-              y1={PLOT_TOP}
-              y2={PLOT_BOTTOM}
+              y1={TOP_PAD}
+              y2={plotBottom}
               stroke="#B8C0CC"
               strokeWidth={1.5}
               strokeDasharray="4,4"
@@ -478,19 +478,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 18,
     padding: CARD_PADDING,
-    marginBottom: 10,
   },
 
   cardTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 4,
   },
 
   tooltipPanel: {
-    minHeight: 48,
+    minHeight: 38,
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 2,
     paddingHorizontal: 4,
   },
 
@@ -558,7 +557,7 @@ const styles = StyleSheet.create({
   legendRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 10,
+    marginTop: 4,
   },
 
   legendItem: {

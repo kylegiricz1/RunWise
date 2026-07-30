@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { getShortDateLabel } from '../utils/date';
 
 type Props = {
@@ -32,11 +32,7 @@ export default function DaySelector({
         <Text style={[styles.arrowText, !canGoPrevious && styles.arrowTextDisabled]}>‹</Text>
       </Pressable>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipRow}
-      >
+      <View style={styles.daysRow}>
         {dates.map((date, index) => {
           const { weekday, day } = getShortDateLabel(date);
           const active = index === selectedIndex;
@@ -53,7 +49,7 @@ export default function DaySelector({
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
 
       <Pressable
         onPress={onNext}
@@ -70,7 +66,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    gap: 6,
   },
 
   arrowButton: {
@@ -97,18 +93,18 @@ const styles = StyleSheet.create({
     color: '#9AA3B2',
   },
 
-  chipRow: {
-    paddingHorizontal: 8,
-    gap: 8,
+  daysRow: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 4,
   },
 
   chip: {
+    flex: 1,
     backgroundColor: 'white',
-    borderRadius: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    borderRadius: 12,
+    paddingVertical: 7,
     alignItems: 'center',
-    minWidth: 52,
   },
 
   chipActive: {
@@ -116,13 +112,13 @@ const styles = StyleSheet.create({
   },
 
   chipWeekday: {
-    fontSize: 11,
+    fontSize: 9,
     color: '#9AA3B2',
     fontWeight: '600',
   },
 
   chipDay: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#333',
     fontWeight: '700',
     marginTop: 2,

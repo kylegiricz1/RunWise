@@ -9,53 +9,67 @@ type Props = {
 };
 
 export default function BestTimeCard({ city, state, bestTime, dayLabel }: Props) {
+  const location = [city, state].filter(Boolean).join(', ');
+
   return (
-    <>
+    <View style={styles.section}>
       <Text style={styles.heading}>
-        Best Time to Run {city && `in ${city}, ${state}`}
+        Your best run window
       </Text>
+      {location ? <Text style={styles.location}>{location}</Text> : null}
 
       <View style={styles.mainCard}>
         <Text style={styles.dayLabel}>{dayLabel}</Text>
         <Text style={styles.time}> {formatTimeLabel(bestTime) ?? '—'}</Text>
         <Text style={styles.subtitle}>Cool temperatures and low wind</Text>
       </View>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  section: {
+    gap: 2,
+  },
+
   heading: {
-    fontSize: 32,
+    fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 10,
+    color: '#172033',
+  },
+
+  location: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '500',
   },
 
   mainCard: {
     backgroundColor: '#3B82F6',
     borderRadius: 20,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    marginTop: 6,
   },
 
   dayLabel: {
     color: 'rgba(255,255,255,0.85)',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
 
   time: {
     color: 'white',
-    fontSize: 46,
+    fontSize: 36,
     fontWeight: 'bold',
   },
 
   subtitle: {
     color: 'white',
-    fontSize: 16,
-    marginTop: 8,
+    fontSize: 13,
+    marginTop: 2,
+    fontWeight: '600',
   },
 });
