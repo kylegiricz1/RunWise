@@ -1,17 +1,17 @@
-import { useEffect } from 'react';
 import { useLocalSearchParams } from 'expo-router';
+import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import BestTimeCard from '../../components/BestTimeCard';
 import DaySelector from '../../components/DaySelector';
 import WeatherGraphCard from '../../components/WeatherGraphCard';
+import { useLocation } from '../../hooks/useLocation';
 import { useWeatherData } from '../../hooks/useWeatherData';
 import { getDayLabel } from '../../utils/date';
 
 export default function HomeScreen() {
   const { day } = useLocalSearchParams<{ day?: string }>();
+  const { location } = useLocation();
   const {
-    city,
-    state,
     hourlyData,
     bestTime,
     days,
@@ -21,8 +21,10 @@ export default function HomeScreen() {
     goToNextDay,
     canGoPreviousDay,
     canGoNextDay,
-  } = useWeatherData();
+  } = useWeatherData(location);
 
+const city = location?.label ?? null;
+const state = location?.region ?? null;
   const dayLabel =
     days.length > 0 ? getDayLabel(selectedDayIndex, days[selectedDayIndex].date) : '';
 

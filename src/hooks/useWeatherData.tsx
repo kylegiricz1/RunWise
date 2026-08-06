@@ -1,25 +1,21 @@
-import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRunPreferences } from '../context/RunPreferencesContext';
 import { fetchForecast } from '../services/weatherApi';
 import { getConditionText } from '../services/weatherApi/conditions';
 import { bestRunHour } from '../services/weatherScoring/score';
 import { filterHoursByWindows } from '../services/weatherScoring/timeWindowFilter';
+import { LocationState } from '../types/location';
 import { DailyBestTime, DayForecast, HourlyPoint, WeatherData } from '../types/weather';
 
-const DEFAULT_DAY_INDEX = 1; // tomorrow, matches the app's original default
+const DEFAULT_DAY_INDEX = 1;
 
 type UseWeatherDataResult = {
-  city: string | null;
-  state: string | null;
   weather: WeatherData | null;
   hourlyData: HourlyPoint[];
   bestTime: string | null;
   dailyBestTimes: DailyBestTime[];
   loading: boolean;
   error: string | null;
-
-  // Multi-day navigation
   days: DayForecast[];
   selectedDayIndex: number;
   selectDay: (index: number) => void;
@@ -29,10 +25,8 @@ type UseWeatherDataResult = {
   canGoNextDay: boolean;
 };
 
-export function useWeatherData(): UseWeatherDataResult {
+export function useWeatherData(location: LocationState | null): UseWeatherDataResult {
   const { activeWindows } = useRunPreferences();
-  const [city, setCity] = useState<string | null>(null);
-  const [state, setState] = useState<string | null>(null);
   const [days, setDays] = useState<DayForecast[]>([]);
   const [selectedDayIndex, setSelectedDayIndex] = useState(DEFAULT_DAY_INDEX);
   const [bestTime, setBestTime] = useState<string | null>(null);
@@ -40,48 +34,15 @@ export function useWeatherData(): UseWeatherDataResult {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadWeather() {
+    if (!location) return;
+
+    async function loadWeather(loc: LocationState) {
       try {
         setLoading(true);
         setError(null);
 
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const data = await fetchForecast(loc.latitude, loc.longitude);
 
-        if (status !== 'granted') {
-          console.log('Permission denied');
-          setError('Location permission denied');
-          return;
-        }
-
-        const currentLocation = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-
-        const { latitude, longitude } = currentLocation.coords;
-
-        // Reverse geocoding can fail/throw on some platforms (e.g. web) —
-        // don't let it block the weather fetch below.
-        try {
-          const address = await Location.reverseGeocodeAsync({
-            latitude,
-            longitude,
-          });
-
-          if (address.length > 0) {
-            setCity(address[0].city);
-            setState(address[0].region);
-          }
-        } catch (geocodeError) {
-          console.log('Reverse geocode error:', geocodeError);
-        }
-
-        const data = await fetchForecast(latitude, longitude);
-
-        // Build one DayForecast per day the API returned, each carrying
-        // its own daily summary + its 24 hourly points. Hourly data is a
-        // flat array covering every day back-to-back (24 entries per day,
-        // starting at day 0's midnight), so day `i`'s hours are the slice
-        // [i * 24, i * 24 + 24).
         const builtDays: DayForecast[] = data.daily.time.map((date, i) => {
           const weather: WeatherData = {
             temperature: `${Math.round(data.daily.temperature_2m_max[i])}°F`,
@@ -96,7 +57,7 @@ export function useWeatherData(): UseWeatherDataResult {
           const startHour = i * 24;
           const endHour = startHour + 24;
           for (let h = startHour; h < endHour; h++) {
-            if (!data.hourly.time[h]) continue; // guard in case of a short final day
+            if (!data.hourly.time[h]) continue;
             hourly.push({
               time: data.hourly.time[h],
               feelsLike: data.hourly.apparent_temperature[h],
@@ -110,20 +71,17 @@ export function useWeatherData(): UseWeatherDataResult {
         });
 
         setDays(builtDays);
-        setSelectedDayIndex((prev) =>
-          // Clamp in case a previous fetch had fewer days for some reason.
-          Math.min(prev, builtDays.length - 1)
-        );
+        setSelectedDayIndex((prev) => Math.min(prev, builtDays.length - 1));
       } catch (err) {
-        console.log('Location error:', err);
+        console.log('Weather fetch error:', err);
         setError(err instanceof Error ? err.message : 'Failed to load weather');
       } finally {
         setLoading(false);
       }
     }
 
-    loadWeather();
-  }, []);
+    loadWeather(location);
+  }, [location?.latitude, location?.longitude]);
 
   const selectedDay = days[selectedDayIndex] ?? null;
   const weather = selectedDay?.weather ?? null;
@@ -135,32 +93,25 @@ export function useWeatherData(): UseWeatherDataResult {
         if (day.hourly.length === 0) {
           return { date: day.date, time: null, score: null };
         }
-
         const best = bestRunHour(filterHoursByWindows(day.hourly, activeWindows));
-        return {
-          date: day.date,
-          time: best.time.split('T')[1] ?? null,
-          score: best.score,
-        };
+        return { date: day.date, time: best.time.split('T')[1] ?? null, score: best.score };
       }),
     [activeWindows, days]
   );
 
-  // Keep the selected-day recommendation in sync with the weekly scores.
   useEffect(() => {
     setBestTime(dailyBestTimes[selectedDayIndex]?.time ?? null);
   }, [dailyBestTimes, selectedDayIndex]);
 
-  const selectDay = useCallback((index: number) => {
-    setSelectedDayIndex(Math.min(Math.max(index, 0), days.length - 1));
-  }, [days.length]);
+  const selectDay = useCallback(
+    (index: number) => setSelectedDayIndex(Math.min(Math.max(index, 0), days.length - 1)),
+    [days.length]
+  );
 
   const goToPreviousDay = () => selectDay(selectedDayIndex - 1);
   const goToNextDay = () => selectDay(selectedDayIndex + 1);
 
   return {
-    city,
-    state,
     weather,
     hourlyData,
     bestTime,
