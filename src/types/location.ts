@@ -1,6 +1,6 @@
 type LocationSource = "gps" | "manual";
 
-interface LocationState {
+export interface LocationState {
   source: LocationSource;
   latitude: number;
   longitude: number;
