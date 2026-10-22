@@ -1,8 +1,9 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import BestTimeCard from '../../components/BestTimeCard';
 import DaySelector from '../../components/DaySelector';
+import LocationPickerModal from '../../components/LocationPickerModal';
 import WeatherGraphCard from '../../components/WeatherGraphCard';
 import { useLocation } from '../../hooks/useLocation';
 import { useWeatherData } from '../../hooks/useWeatherData';
@@ -11,6 +12,8 @@ import { getDayLabel } from '../../utils/date';
 export default function HomeScreen() {
   const { day } = useLocalSearchParams<{ day?: string }>();
   const { location } = useLocation();
+  const [isLocationModalVisible, setIsLocationModalVisible] = useState(false);
+
   const {
     hourlyData,
     bestTime,
@@ -23,8 +26,8 @@ export default function HomeScreen() {
     canGoNextDay,
   } = useWeatherData(location);
 
-const city = location?.label ?? null;
-const state = location?.region ?? null;
+  const city = location?.label ?? null;
+  const state = location?.region ?? null;
   const dayLabel =
     days.length > 0 ? getDayLabel(selectedDayIndex, days[selectedDayIndex].date) : '';
 
@@ -37,7 +40,14 @@ const state = location?.region ?? null;
 
   return (
     <View style={styles.container}>
-      <BestTimeCard city={city} state={state} bestTime={bestTime} dayLabel={dayLabel} />
+      <BestTimeCard
+        city={city}
+        state={state}
+        bestTime={bestTime}
+        dayLabel={dayLabel}
+        source={location?.source}
+        onPressLocation={() => setIsLocationModalVisible(true)}
+      />
 
       <View style={styles.daySection}>
         <DaySelector
@@ -50,8 +60,13 @@ const state = location?.region ?? null;
           canGoNext={canGoNextDay}
         />
       </View>
-      
+
       <WeatherGraphCard data={hourlyData} bestTime={bestTime} />
+
+      <LocationPickerModal
+        visible={isLocationModalVisible}
+        onClose={() => setIsLocationModalVisible(false)}
+      />
     </View>
   );
 }

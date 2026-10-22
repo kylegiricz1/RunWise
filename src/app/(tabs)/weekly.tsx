@@ -1,11 +1,15 @@
 import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text } from 'react-native';
 import WeeklyBestTimesChart from '../../components/weekly-best-times-chart';
+import { useLocation } from '../../context/LocationContext';
 import { useWeatherData } from '../../hooks/useWeatherData';
 
 export default function WeeklyScreen() {
   const router = useRouter();
+  const { location } = useLocation();
   const { dailyBestTimes, loading } = useWeatherData();
+
+  const locationLabel = [location?.label, location?.region].filter(Boolean).join(', ');
 
   return (
     <ScrollView
@@ -14,6 +18,7 @@ export default function WeeklyScreen() {
       contentInsetAdjustmentBehavior="automatic"
     >
       <Text style={styles.heading}>Your week at a glance</Text>
+      {locationLabel ? <Text style={styles.locationSub}>📍 {locationLabel}</Text> : null}
       <Text style={styles.description}>
         Find the strongest run window for every day, based on your preferred schedule.
       </Text>
@@ -45,6 +50,12 @@ const styles = StyleSheet.create({
     color: '#172033',
     fontSize: 28,
     fontWeight: '700',
+  },
+  locationSub: {
+    color: '#3B82F6',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: -8,
   },
   description: {
     color: '#64748B',
