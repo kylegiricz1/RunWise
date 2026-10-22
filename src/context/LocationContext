@@ -1,4 +1,0 @@
-import { useState } from 'react';
-import { LocationState } from '../types/location';
-
-const [location, setLocation] = useState<LocationState | null>(null);

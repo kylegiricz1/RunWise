@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from '../context/LocationContext';
 import { useRunPreferences } from '../context/RunPreferencesContext';
 import { fetchForecast } from '../services/weatherApi';
 import { getConditionText } from '../services/weatherApi/conditions';
@@ -25,7 +26,10 @@ type UseWeatherDataResult = {
   canGoNextDay: boolean;
 };
 
-export function useWeatherData(location: LocationState | null): UseWeatherDataResult {
+export function useWeatherData(overrideLocation?: LocationState | null): UseWeatherDataResult {
+  const { location: contextLocation, loading: locationLoading } = useLocation();
+  const location = overrideLocation !== undefined ? overrideLocation : contextLocation;
+
   const { activeWindows } = useRunPreferences();
   const [days, setDays] = useState<DayForecast[]>([]);
   const [selectedDayIndex, setSelectedDayIndex] = useState(DEFAULT_DAY_INDEX);
@@ -34,7 +38,12 @@ export function useWeatherData(location: LocationState | null): UseWeatherDataRe
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!location) return;
+    if (!location) {
+      if (!locationLoading) {
+        setLoading(false);
+      }
+      return;
+    }
 
     async function loadWeather(loc: LocationState) {
       try {
@@ -50,7 +59,7 @@ export function useWeatherData(location: LocationState | null): UseWeatherDataRe
             condition: getConditionText(data.daily.weathercode[i]),
             wind: `${Math.round(data.daily.windspeed_10m_max[i])} mph`,
             humidity: `${Math.round(data.daily.relative_humidity_2m_mean[i])}%`,
-            rainChance: `${Math.round(data.daily.precipitation_probability_max[i])}%`,
+            rainChance: `${data.daily.precipitation_probability_max[i]}%`,
           };
 
           const hourly: HourlyPoint[] = [];
@@ -62,8 +71,8 @@ export function useWeatherData(location: LocationState | null): UseWeatherDataRe
               time: data.hourly.time[h],
               feelsLike: data.hourly.apparent_temperature[h],
               humidity: data.hourly.relative_humidity_2m[h],
-              rainChance: data.hourly.precipitation_probability[h],
               wind: data.hourly.windspeed_10m[h],
+              rainChance: data.hourly.precipitation_probability[h],
             });
           }
 
@@ -81,7 +90,7 @@ export function useWeatherData(location: LocationState | null): UseWeatherDataRe
     }
 
     loadWeather(location);
-  }, [location?.latitude, location?.longitude]);
+  }, [location?.latitude, location?.longitude, locationLoading]);
 
   const selectedDay = days[selectedDayIndex] ?? null;
   const weather = selectedDay?.weather ?? null;
@@ -116,7 +125,7 @@ export function useWeatherData(location: LocationState | null): UseWeatherDataRe
     hourlyData,
     bestTime,
     dailyBestTimes,
-    loading,
+    loading: loading || locationLoading,
     error,
     days,
     selectedDayIndex,
