@@ -1,13 +1,18 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import HourStepper, { formatHourLabel } from '../../components/HourStepper';
+import LocationPickerModal from '../../components/LocationPickerModal';
 import { PRESET_ORDER, PRESET_WINDOWS } from '../../constants/presetWindows';
+import { useLocation } from '../../context/LocationContext';
 import { useRunPreferences } from '../../context/RunPreferencesContext';
 
 export default function PreferencesScreen() {
   const { preferences, togglePreset, addCustomWindow, removeCustomWindow } =
     useRunPreferences();
+  const { location } = useLocation();
 
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [customStart, setCustomStart] = useState(6);
   const [customEnd, setCustomEnd] = useState(8);
@@ -29,10 +34,45 @@ export default function PreferencesScreen() {
     setCustomEnd(8);
   };
 
+  const locationLabel =
+    [location?.label, location?.region].filter(Boolean).join(', ') || 'Not selected';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Preferences</Text>
 
+      {/* Location Section */}
+      <Text style={styles.sectionTitle}>Running Location</Text>
+      <Text style={styles.sectionSubtitle}>
+        Weather forecasts and optimal run windows are calculated for this location.
+      </Text>
+
+      <View style={styles.locationCard}>
+        <View style={styles.locationInfoRow}>
+          <Ionicons
+            name={location?.source === 'gps' ? 'navigate-circle' : 'location'}
+            size={22}
+            color="#3B82F6"
+          />
+          <View style={styles.locationTextCol}>
+            <Text style={styles.locationName}>{locationLabel}</Text>
+            <Text style={styles.locationSourceText}>
+              {location?.source === 'gps' ? 'Auto-detected via GPS' : 'Custom selected city'}
+            </Text>
+          </View>
+        </View>
+        <Pressable
+          style={({ pressed }) => [
+            styles.changeLocationButton,
+            pressed && styles.changeLocationButtonPressed,
+          ]}
+          onPress={() => setLocationModalOpen(true)}
+        >
+          <Text style={styles.changeLocationButtonText}>Change</Text>
+        </Pressable>
+      </View>
+
+      {/* Schedule / Preset Section */}
       <Text style={styles.sectionTitle}>When do you usually run?</Text>
       <Text style={styles.sectionSubtitle}>
         We'll only recommend times inside the windows you pick below. Leave everything
@@ -60,18 +100,20 @@ export default function PreferencesScreen() {
         })}
       </View>
 
-      <Text style={styles.sectionTitle}>Custom windows</Text>
-
-      {preferences.customWindows.length === 0 && !builderOpen && (
-        <Text style={styles.sectionSubtitle}>
-          Add a specific window if the presets don't quite fit your schedule.
-        </Text>
-      )}
+      {/* Custom Windows */}
+      <Text style={styles.sectionTitle}>Custom Windows</Text>
+      <Text style={styles.sectionSubtitle}>
+        Have a specific block of free time? Add your own windows below.
+      </Text>
 
       {preferences.customWindows.map((window) => (
         <View key={window.id} style={styles.customRow}>
           <Text style={styles.customLabel}>{window.label}</Text>
-          <Pressable onPress={() => removeCustomWindow(window.id)} style={styles.removeButton}>
+          <Pressable
+            onPress={() => removeCustomWindow(window.id)}
+            style={styles.removeButton}
+            hitSlop={8}
+          >
             <Text style={styles.removeButtonText}>Remove</Text>
           </Pressable>
         </View>
@@ -83,46 +125,51 @@ export default function PreferencesScreen() {
             <HourStepper
               label="Start"
               hour={customStart}
-              onChange={(h) => {
-                setCustomStart(h);
+              onChange={(next) => {
+                setCustomStart(next);
                 setCustomError(null);
               }}
             />
             <HourStepper
               label="End"
               hour={customEnd}
-              onChange={(h) => {
-                setCustomEnd(h);
+              onChange={(next) => {
+                setCustomEnd(next);
                 setCustomError(null);
               }}
             />
           </View>
 
-          {customError && <Text style={styles.errorText}>{customError}</Text>}
+          {customError ? <Text style={styles.errorText}>{customError}</Text> : null}
 
           <View style={styles.builderActions}>
             <Pressable
+              style={[styles.builderButton, styles.builderButtonSecondary]}
               onPress={() => {
                 setBuilderOpen(false);
                 setCustomError(null);
               }}
-              style={[styles.builderButton, styles.builderButtonSecondary]}
             >
               <Text style={styles.builderButtonSecondaryText}>Cancel</Text>
             </Pressable>
             <Pressable
-              onPress={handleAddCustomWindow}
               style={[styles.builderButton, styles.builderButtonPrimary]}
+              onPress={handleAddCustomWindow}
             >
-              <Text style={styles.builderButtonPrimaryText}>Add window</Text>
+              <Text style={styles.builderButtonPrimaryText}>Save Window</Text>
             </Pressable>
           </View>
         </View>
       ) : (
-        <Pressable onPress={() => setBuilderOpen(true)} style={styles.addButton}>
-          <Text style={styles.addButtonText}>+ Add custom time window</Text>
+        <Pressable style={styles.addButton} onPress={() => setBuilderOpen(true)}>
+          <Text style={styles.addButtonText}>+ Add Custom Window</Text>
         </Pressable>
       )}
+
+      <LocationPickerModal
+        visible={locationModalOpen}
+        onClose={() => setLocationModalOpen(false)}
+      />
     </ScrollView>
   );
 }
@@ -130,33 +177,88 @@ export default function PreferencesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f7fb',
+    backgroundColor: '#F5F7FB',
   },
 
   content: {
     padding: 24,
-    paddingTop: 70,
-    paddingBottom: 60,
+    paddingBottom: 48,
   },
 
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    marginBottom: 24,
+    marginBottom: 20,
+    color: '#0F172A',
   },
 
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginTop: 20,
+    marginTop: 22,
     marginBottom: 6,
+    color: '#1E293B',
   },
 
   sectionSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: '#64748B',
     marginBottom: 14,
     lineHeight: 19,
+  },
+
+  locationCard: {
+    backgroundColor: 'white',
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
+  },
+
+  locationInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+
+  locationTextCol: {
+    flex: 1,
+  },
+
+  locationName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+
+  locationSourceText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+
+  changeLocationButton: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+
+  changeLocationButtonPressed: {
+    backgroundColor: '#DBEAFE',
+  },
+
+  changeLocationButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
   },
 
   chipRow: {
