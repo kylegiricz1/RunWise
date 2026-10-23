@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { PRESET_WINDOWS } from '../constants/presetWindows';
+import {
+  cancelDailyNotifications,
+  requestNotificationPermissions,
+} from '../services/notifications';
 import { PresetWindowKey, RunTimePreferences, TimeWindow } from '../types/settings';
 
 const STORAGE_KEY = 'runwise:runTimePreferences';
@@ -8,6 +12,10 @@ const STORAGE_KEY = 'runwise:runTimePreferences';
 const DEFAULT_PREFERENCES: RunTimePreferences = {
   selectedPresets: [],
   customWindows: [],
+  notifications: {
+    enabled: false,
+    hour: 20, // Default 8:00 PM
+  },
 };
 
 type RunPreferencesContextValue = {
@@ -16,6 +24,8 @@ type RunPreferencesContextValue = {
   togglePreset: (key: PresetWindowKey) => void;
   addCustomWindow: (window: Omit<TimeWindow, 'id'>) => void;
   removeCustomWindow: (id: string) => void;
+  setNotificationsEnabled: (enabled: boolean) => Promise<boolean>;
+  setNotificationHour: (hour: number) => void;
   // All windows the person currently has selected, preset + custom combined.
   // Empty array means "no preference set" (i.e. don't filter anything).
   activeWindows: TimeWindow[];
@@ -33,7 +43,15 @@ export function RunPreferencesProvider({ children }: { children: React.ReactNode
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
-          setPreferences(JSON.parse(raw));
+          const parsed = JSON.parse(raw);
+          setPreferences({
+            selectedPresets: Array.isArray(parsed.selectedPresets) ? parsed.selectedPresets : [],
+            customWindows: Array.isArray(parsed.customWindows) ? parsed.customWindows : [],
+            notifications: {
+              enabled: Boolean(parsed.notifications?.enabled),
+              hour: typeof parsed.notifications?.hour === 'number' ? parsed.notifications.hour : 20,
+            },
+          });
         }
       } catch (err) {
         console.log('Failed to load run time preferences:', err);
@@ -80,6 +98,50 @@ export function RunPreferencesProvider({ children }: { children: React.ReactNode
     }));
   };
 
+  const setNotificationsEnabled = async (enabled: boolean): Promise<boolean> => {
+    if (enabled) {
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        setPreferences((prev) => ({
+          ...prev,
+          notifications: {
+            hour: prev.notifications?.hour ?? 20,
+            enabled: false,
+          },
+        }));
+        return false;
+      }
+      setPreferences((prev) => ({
+        ...prev,
+        notifications: {
+          hour: prev.notifications?.hour ?? 20,
+          enabled: true,
+        },
+      }));
+      return true;
+    } else {
+      await cancelDailyNotifications();
+      setPreferences((prev) => ({
+        ...prev,
+        notifications: {
+          hour: prev.notifications?.hour ?? 20,
+          enabled: false,
+        },
+      }));
+      return true;
+    }
+  };
+
+  const setNotificationHour = (hour: number) => {
+    setPreferences((prev) => ({
+      ...prev,
+      notifications: {
+        enabled: prev.notifications?.enabled ?? false,
+        hour,
+      },
+    }));
+  };
+
   const activeWindows = useMemo<TimeWindow[]>(() => {
     const presetWindows = preferences.selectedPresets.map((key) => PRESET_WINDOWS[key]);
     return [...presetWindows, ...preferences.customWindows];
@@ -91,6 +153,8 @@ export function RunPreferencesProvider({ children }: { children: React.ReactNode
     togglePreset,
     addCustomWindow,
     removeCustomWindow,
+    setNotificationsEnabled,
+    setNotificationHour,
     activeWindows,
   };
 

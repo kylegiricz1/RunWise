@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from '../context/LocationContext';
 import { useRunPreferences } from '../context/RunPreferencesContext';
+import { scheduleRollingRunNotifications } from '../services/notifications';
 import { fetchForecast } from '../services/weatherApi';
 import { getConditionText } from '../services/weatherApi/conditions';
 import { bestRunHour } from '../services/weatherScoring/score';
@@ -30,7 +31,7 @@ export function useWeatherData(overrideLocation?: LocationState | null): UseWeat
   const { location: contextLocation, loading: locationLoading } = useLocation();
   const location = overrideLocation !== undefined ? overrideLocation : contextLocation;
 
-  const { activeWindows } = useRunPreferences();
+  const { activeWindows, preferences } = useRunPreferences();
   const [days, setDays] = useState<DayForecast[]>([]);
   const [selectedDayIndex, setSelectedDayIndex] = useState(DEFAULT_DAY_INDEX);
   const [bestTime, setBestTime] = useState<string | null>(null);
@@ -111,6 +112,19 @@ export function useWeatherData(overrideLocation?: LocationState | null): UseWeat
   useEffect(() => {
     setBestTime(dailyBestTimes[selectedDayIndex]?.time ?? null);
   }, [dailyBestTimes, selectedDayIndex]);
+
+  // Synchronize rolling local notifications when forecast data or preferences change
+  useEffect(() => {
+    if (preferences.notifications?.enabled && days.length > 1) {
+      scheduleRollingRunNotifications(
+        days,
+        activeWindows,
+        preferences.notifications.hour ?? 20
+      ).catch((err) => {
+        console.warn('Failed to schedule rolling notifications:', err);
+      });
+    }
+  }, [days, activeWindows, preferences.notifications?.enabled, preferences.notifications?.hour]);
 
   const selectDay = useCallback(
     (index: number) => setSelectedDayIndex(Math.min(Math.max(index, 0), days.length - 1)),
