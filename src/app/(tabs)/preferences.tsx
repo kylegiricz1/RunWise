@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
   Alert,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,7 +16,7 @@ import LocationPickerModal from '../../components/LocationPickerModal';
 import { PRESET_ORDER, PRESET_WINDOWS } from '../../constants/presetWindows';
 import { useLocation } from '../../context/LocationContext';
 import { useRunPreferences } from '../../context/RunPreferencesContext';
-import { sendTestNotification } from '../../services/notifications';
+import { isNotificationsSupported, sendTestNotification } from '../../services/notifications';
 
 export default function PreferencesScreen() {
   const {
@@ -37,8 +38,18 @@ export default function PreferencesScreen() {
 
   const notificationsEnabled = preferences.notifications?.enabled ?? false;
   const alertHour = preferences.notifications?.hour ?? 20;
+  const supported = isNotificationsSupported();
 
   const handleToggleNotifications = async (val: boolean) => {
+    if (!supported && val) {
+      Alert.alert(
+        'Development Build Required',
+        'Android notifications were removed from Expo Go in SDK 53+. Please create a development build (npx expo run:android) to enable and test notifications on your device.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     const success = await setNotificationsEnabled(val);
     if (val && !success) {
       Alert.alert(
@@ -53,6 +64,14 @@ export default function PreferencesScreen() {
   };
 
   const handleSendTestNotification = async () => {
+    if (!supported) {
+      Alert.alert(
+        'Development Build Required',
+        'Android notifications were removed from Expo Go in SDK 53+. Please create a development build (npx expo run:android) to test notifications on your device.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
     setTestStatus('Sending test notification...');
     const result = await sendTestNotification();
     if (result) {
@@ -237,6 +256,15 @@ export default function PreferencesScreen() {
             thumbColor={notificationsEnabled ? '#3B82F6' : '#F8FAFC'}
           />
         </View>
+
+        {!supported && (
+          <View style={styles.devBuildWarning}>
+            <Ionicons name="information-circle-outline" size={18} color="#D97706" />
+            <Text style={styles.devBuildWarningText}>
+              Notifications require a Development Build on Android (not supported in Expo Go). Run <Text style={styles.codeText}>npx expo run:android</Text> to test.
+            </Text>
+          </View>
+        )}
 
         {notificationsEnabled && (
           <View style={styles.notificationConfigArea}>
@@ -634,5 +662,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontWeight: '500',
+  },
+
+  devBuildWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+
+  devBuildWarningText: {
+    fontSize: 12,
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 16,
+  },
+
+  codeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '600',
   },
 });

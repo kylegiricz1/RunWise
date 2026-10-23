@@ -1,4 +1,4 @@
-import * as Notifications from 'expo-notifications';
+import { isRunningInExpoGo } from 'expo';
 import { Platform } from 'react-native';
 import { TimeWindow } from '../../types/settings';
 import { DayForecast } from '../../types/weather';
@@ -9,23 +9,60 @@ import { filterHoursByWindows } from '../weatherScoring/timeWindowFilter';
 export const RUNWISE_NOTIFICATION_CHANNEL_ID = 'runwise-daily-best-time';
 export const NOTIFICATION_PREFIX = 'runwise-daily-day-';
 
-// Configure foreground notification presentation handler.
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
+/**
+ * Check if the current runtime environment supports expo-notifications.
+ * Note: Remote/push notifications were removed from Expo Go on Android in SDK 53+,
+ * so importing expo-notifications inside Android Expo Go throws an Uncaught Error.
+ * In a development build or production build, this returns true.
+ */
+export function isNotificationsSupported(): boolean {
+  if (Platform.OS === 'web') return false;
+  if (Platform.OS === 'android' && isRunningInExpoGo()) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Lazily loads expo-notifications only if supported in the current environment.
+ */
+function getNotificationsModule(): any | null {
+  if (!isNotificationsSupported()) {
+    return null;
+  }
+  try {
+    return require('expo-notifications');
+  } catch (error) {
+    console.warn('Failed to load expo-notifications:', error);
+    return null;
+  }
+}
+
+// Initialize foreground notification presentation handler if supported
+if (isNotificationsSupported()) {
+  try {
+    const Notifications = getNotificationsModule();
+    if (Notifications?.setNotificationHandler) {
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+    }
+  } catch (e) {
+    console.warn('Could not initialize notification handler:', e);
+  }
 }
 
 /**
  * Configure Android notification channels. Required for Android 8.0+ (API 26+).
  */
 export async function setupNotificationChannels(): Promise<void> {
-  if (Platform.OS !== 'android') return;
+  const Notifications = getNotificationsModule();
+  if (!Notifications || Platform.OS !== 'android') return;
 
   try {
     await Notifications.setNotificationChannelAsync(RUNWISE_NOTIFICATION_CHANNEL_ID, {
@@ -45,7 +82,8 @@ export async function setupNotificationChannels(): Promise<void> {
  * Check if the user has granted notification permissions.
  */
 export async function checkNotificationPermissions(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return false;
 
   try {
     const { status } = await Notifications.getPermissionsAsync();
@@ -59,7 +97,8 @@ export async function checkNotificationPermissions(): Promise<boolean> {
  * Prompt user for notification permissions and set up notification channels.
  */
 export async function requestNotificationPermissions(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return false;
 
   try {
     await setupNotificationChannels();
@@ -88,7 +127,8 @@ export async function requestNotificationPermissions(): Promise<boolean> {
  * Cancel all previously scheduled RunWise daily notifications.
  */
 export async function cancelDailyNotifications(): Promise<void> {
-  if (Platform.OS === 'web') return;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return;
 
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -106,7 +146,8 @@ export async function cancelDailyNotifications(): Promise<void> {
  * Send an immediate test notification (in 2 seconds) to verify permissions and layout.
  */
 export async function sendTestNotification(): Promise<string | null> {
-  if (Platform.OS === 'web') return null;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return null;
 
   const granted = await requestNotificationPermissions();
   if (!granted) return null;
@@ -145,7 +186,8 @@ export async function scheduleRollingRunNotifications(
   activeWindows: TimeWindow[],
   alertHour: number = 20
 ): Promise<number> {
-  if (Platform.OS === 'web' || !days || days.length <= 1) return 0;
+  const Notifications = getNotificationsModule();
+  if (!Notifications || !days || days.length <= 1) return 0;
 
   const granted = await checkNotificationPermissions();
   if (!granted) return 0;
@@ -215,4 +257,46 @@ export async function scheduleRollingRunNotifications(
   }
 
   return scheduledCount;
+}
+
+/**
+ * Registers listeners for notification responses (user tapping a notification).
+ * Safe to call in all environments including Expo Go.
+ */
+export function subscribeToNotificationResponses(
+  onResponse: (dayIndex: number | string) => void
+): () => void {
+  const Notifications = getNotificationsModule();
+  if (!Notifications?.addNotificationResponseReceivedListener) {
+    return () => {};
+  }
+
+  try {
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response: any) => {
+      const dayIndex = response?.notification?.request?.content?.data?.dayIndex;
+      if (dayIndex !== undefined && dayIndex !== null) {
+        onResponse(dayIndex);
+      }
+    });
+
+    if (Notifications.getLastNotificationResponseAsync) {
+      Notifications.getLastNotificationResponseAsync()
+        .then((response: any) => {
+          if (response) {
+            const dayIndex = response?.notification?.request?.content?.data?.dayIndex;
+            if (dayIndex !== undefined && dayIndex !== null) {
+              onResponse(dayIndex);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      responseSub?.remove?.();
+    };
+  } catch (error) {
+    console.warn('Failed to subscribe to notification responses:', error);
+    return () => {};
+  }
 }
