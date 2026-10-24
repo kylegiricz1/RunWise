@@ -4,14 +4,14 @@ import { useRunPreferences } from '../context/RunPreferencesContext';
 import { scheduleRollingRunNotifications } from '../services/notifications';
 import { fetchForecast } from '../services/weatherApi';
 import { getConditionText } from '../services/weatherApi/conditions';
-import { bestRunHour } from '../services/weatherScoring/score';
-import { filterHoursByWindows } from '../services/weatherScoring/timeWindowFilter';
+import { evaluateDayRunWindow } from '../services/weatherScoring/score';
 import { LocationState } from '../types/location';
 import { DailyBestTime, DayForecast, HourlyPoint, WeatherData } from '../types/weather';
+import { isDateToday } from '../utils/date';
 
-const DEFAULT_DAY_INDEX = 1;
+const DEFAULT_DAY_INDEX = 0;
 
-type UseWeatherDataResult = {
+export type UseWeatherDataResult = {
   weather: WeatherData | null;
   hourlyData: HourlyPoint[];
   bestTime: string | null;
@@ -25,6 +25,11 @@ type UseWeatherDataResult = {
   goToNextDay: () => void;
   canGoPreviousDay: boolean;
   canGoNextDay: boolean;
+  // Past-hour awareness metrics for the currently selected day
+  isToday: boolean;
+  isPrimePassed: boolean;
+  overallBestTime: string | null;
+  allWindowsPassed: boolean;
 };
 
 export function useWeatherData(overrideLocation?: LocationState | null): UseWeatherDataResult {
@@ -99,15 +104,35 @@ export function useWeatherData(overrideLocation?: LocationState | null): UseWeat
 
   const dailyBestTimes = useMemo<DailyBestTime[]>(
     () =>
-      days.map((day) => {
-        if (day.hourly.length === 0) {
-          return { date: day.date, time: null, score: null };
-        }
-        const best = bestRunHour(filterHoursByWindows(day.hourly, activeWindows));
-        return { date: day.date, time: best.time.split('T')[1] ?? null, score: best.score };
+      days.map((day, i) => {
+        const isToday = i === 0 || isDateToday(day.date);
+        const evalResult = evaluateDayRunWindow(day.hourly, activeWindows, isToday);
+
+        const time = evalResult.bestHour?.time ? evalResult.bestHour.time.split('T')[1] : null;
+        const overallBestTime = evalResult.overallBestHour?.time
+          ? evalResult.overallBestHour.time.split('T')[1]
+          : null;
+
+        return {
+          date: day.date,
+          time,
+          score: evalResult.bestHour?.score ?? null,
+          overallBestTime,
+          overallScore: evalResult.overallBestHour?.score ?? null,
+          isPrimePassed: evalResult.isPrimePassed,
+          allWindowsPassed: evalResult.allWindowsPassed,
+          remainingHoursCount: evalResult.remainingHoursCount,
+        };
       }),
     [activeWindows, days]
   );
+
+  const selectedDayEvaluation = dailyBestTimes[selectedDayIndex] ?? null;
+  const isToday =
+    selectedDayIndex === 0 || (selectedDay ? isDateToday(selectedDay.date) : false);
+  const isPrimePassed = isToday && (selectedDayEvaluation?.isPrimePassed ?? false);
+  const allWindowsPassed = isToday && (selectedDayEvaluation?.allWindowsPassed ?? false);
+  const overallBestTime = selectedDayEvaluation?.overallBestTime ?? null;
 
   useEffect(() => {
     setBestTime(dailyBestTimes[selectedDayIndex]?.time ?? null);
@@ -148,5 +173,9 @@ export function useWeatherData(overrideLocation?: LocationState | null): UseWeat
     goToNextDay,
     canGoPreviousDay: selectedDayIndex > 0,
     canGoNextDay: selectedDayIndex < days.length - 1,
+    isToday,
+    isPrimePassed,
+    overallBestTime,
+    allWindowsPassed,
   };
 }

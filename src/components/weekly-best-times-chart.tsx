@@ -26,12 +26,21 @@ export default function WeeklyBestTimesChart({ data, onSelectDay }: Props) {
   const svgWidth = Math.max(260, width - 80);
   const chartWidth = svgWidth - LEFT_PADDING - RIGHT_PADDING;
   const plotBottom = TOP_PADDING + CHART_HEIGHT;
+
   const points = data
     .map((item, index) => {
-      if (!item.time) return null;
+      const displayTime = item.time ?? item.overallBestTime;
+      if (!displayTime) return null;
       const x = LEFT_PADDING + (index / Math.max(data.length - 1, 1)) * chartWidth;
-      const y = TOP_PADDING + (hourOf(item.time) / 24) * CHART_HEIGHT;
-      return { ...item, index, x, y };
+      const y = TOP_PADDING + (hourOf(displayTime) / 24) * CHART_HEIGHT;
+      return {
+        ...item,
+        displayTime,
+        index,
+        x,
+        y,
+        allPassed: item.allWindowsPassed ?? false,
+      };
     })
     .filter((point): point is NonNullable<typeof point> => point !== null);
 
@@ -79,7 +88,7 @@ export default function WeeklyBestTimesChart({ data, onSelectDay }: Props) {
             cx={point.x}
             cy={point.y}
             r={8}
-            fill="#3B82F6"
+            fill={point.allPassed ? '#94A3B8' : '#3B82F6'}
             stroke="white"
             strokeWidth={3}
             onPress={() => onSelectDay(point.index)}
@@ -93,10 +102,10 @@ export default function WeeklyBestTimesChart({ data, onSelectDay }: Props) {
             y={Math.max(14, point.y - 12)}
             fontSize={10}
             fontWeight="700"
-            fill="#1E3A8A"
+            fill={point.allPassed ? '#64748B' : '#1E3A8A'}
             textAnchor="middle"
           >
-            {formatTimeLabel(point.time)}
+            {formatTimeLabel(point.displayTime)}
           </SvgText>
         ))}
 
