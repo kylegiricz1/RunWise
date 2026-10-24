@@ -28,6 +28,8 @@ export type DailyBestTime = {
   overallBestTime?: string | null;
   overallScore?: number | null;
   isPrimePassed?: boolean;
+  isOutsideWindow?: boolean;
+  preferredWindowPassed?: boolean;
   allWindowsPassed?: boolean;
   remainingHoursCount?: number;
 };

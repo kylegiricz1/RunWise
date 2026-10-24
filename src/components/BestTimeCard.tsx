@@ -13,6 +13,8 @@ type Props = {
   // Past-hour awareness props
   isToday?: boolean;
   isPrimePassed?: boolean;
+  isOutsideWindow?: boolean;
+  preferredWindowPassed?: boolean;
   overallBestTime?: string | null;
   allWindowsPassed?: boolean;
   onJumpToTomorrow?: () => void;
@@ -27,6 +29,8 @@ export default function BestTimeCard({
   onPressLocation,
   isToday = false,
   isPrimePassed = false,
+  isOutsideWindow = false,
+  preferredWindowPassed = false,
   overallBestTime,
   allWindowsPassed = false,
   onJumpToTomorrow,
@@ -63,7 +67,13 @@ export default function BestTimeCard({
       <View style={[styles.mainCard, allWindowsPassed && styles.mainCardCompleted]}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.dayLabel}>{dayLabel}</Text>
-          {isToday && isPrimePassed && !allWindowsPassed && (
+          {isToday && isOutsideWindow && (
+            <View style={styles.outsideBadge}>
+              <Ionicons name="sparkles" size={11} color="#BAE6FD" />
+              <Text style={styles.outsideBadgeText}>REST OF DAY</Text>
+            </View>
+          )}
+          {isToday && !isOutsideWindow && isPrimePassed && !allWindowsPassed && (
             <View style={styles.remainingBadge}>
               <Ionicons name="time" size={11} color="#FEF08A" />
               <Text style={styles.remainingBadgeText}>BEST REMAINING</Text>
@@ -105,7 +115,11 @@ export default function BestTimeCard({
         ) : (
           <>
             <Text style={styles.time}>{formattedBestTime ?? '—'}</Text>
-            {isToday && isPrimePassed && formattedOverall ? (
+            {isToday && isOutsideWindow ? (
+              <Text style={styles.subtitleHighlight}>
+                Preferred window passed · Best available for rest of today
+              </Text>
+            ) : isToday && isPrimePassed && formattedOverall ? (
               <Text style={styles.subtitleHighlight}>
                 Earlier prime window: {formattedOverall} (passed)
               </Text>
@@ -177,6 +191,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+  },
+  outsideBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  outsideBadgeText: {
+    color: '#BAE6FD',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   remainingBadge: {
     flexDirection: 'row',

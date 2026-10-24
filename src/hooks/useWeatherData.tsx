@@ -28,6 +28,8 @@ export type UseWeatherDataResult = {
   // Past-hour awareness metrics for the currently selected day
   isToday: boolean;
   isPrimePassed: boolean;
+  isOutsideWindow: boolean;
+  preferredWindowPassed: boolean;
   overallBestTime: string | null;
   allWindowsPassed: boolean;
 };
@@ -120,6 +122,8 @@ export function useWeatherData(overrideLocation?: LocationState | null): UseWeat
           overallBestTime,
           overallScore: evalResult.overallBestHour?.score ?? null,
           isPrimePassed: evalResult.isPrimePassed,
+          isOutsideWindow: evalResult.isOutsideWindow,
+          preferredWindowPassed: evalResult.preferredWindowPassed,
           allWindowsPassed: evalResult.allWindowsPassed,
           remainingHoursCount: evalResult.remainingHoursCount,
         };
@@ -131,6 +135,8 @@ export function useWeatherData(overrideLocation?: LocationState | null): UseWeat
   const isToday =
     selectedDayIndex === 0 || (selectedDay ? isDateToday(selectedDay.date) : false);
   const isPrimePassed = isToday && (selectedDayEvaluation?.isPrimePassed ?? false);
+  const isOutsideWindow = isToday && (selectedDayEvaluation?.isOutsideWindow ?? false);
+  const preferredWindowPassed = isToday && (selectedDayEvaluation?.preferredWindowPassed ?? false);
   const allWindowsPassed = isToday && (selectedDayEvaluation?.allWindowsPassed ?? false);
   const overallBestTime = selectedDayEvaluation?.overallBestTime ?? null;
 
@@ -175,6 +181,8 @@ export function useWeatherData(overrideLocation?: LocationState | null): UseWeat
     canGoNextDay: selectedDayIndex < days.length - 1,
     isToday,
     isPrimePassed,
+    isOutsideWindow,
+    preferredWindowPassed,
     overallBestTime,
     allWindowsPassed,
   };

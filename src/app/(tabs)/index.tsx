@@ -26,6 +26,8 @@ export default function HomeScreen() {
     canGoNextDay,
     isToday,
     isPrimePassed,
+    isOutsideWindow,
+    preferredWindowPassed,
     overallBestTime,
     allWindowsPassed,
   } = useWeatherData(location);
@@ -53,6 +55,8 @@ export default function HomeScreen() {
         onPressLocation={() => setIsLocationModalVisible(true)}
         isToday={isToday}
         isPrimePassed={isPrimePassed}
+        isOutsideWindow={isOutsideWindow}
+        preferredWindowPassed={preferredWindowPassed}
         overallBestTime={overallBestTime}
         allWindowsPassed={allWindowsPassed}
         onJumpToTomorrow={canGoNextDay ? () => selectDay(selectedDayIndex + 1) : undefined}
@@ -73,7 +77,8 @@ export default function HomeScreen() {
       <WeatherGraphCard
         data={hourlyData}
         bestTime={bestTime}
-        isRemainingBest={isToday && isPrimePassed && !allWindowsPassed}
+        isRemainingBest={isToday && isPrimePassed && !allWindowsPassed && !isOutsideWindow}
+        isOutsideWindow={isToday && isOutsideWindow}
       />
 
       <LocationPickerModal
