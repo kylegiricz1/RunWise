@@ -18,6 +18,8 @@ type Props = {
   // bestRunHour(...).time.split('T')[1]). When provided, the chart
   // defaults its selection/tooltip to this hour instead of sitting empty.
   bestTime?: string | null;
+  isRemainingBest?: boolean;
+  isOutsideWindow?: boolean;
 };
 
 // ---- Animated SVG primitives ----
@@ -85,7 +87,7 @@ function makeScale(min: number, max: number, chartHeight: number) {
   return (value: number) => TOP_PAD + (1 - (value - min) / span) * chartHeight;
 }
 
-export default function WeatherGraphCard({ data, bestTime }: Props) {
+export default function WeatherGraphCard({ data, bestTime, isRemainingBest = false, isOutsideWindow = false }: Props) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const chartHeight = screenHeight < 740 ? 150 : 210;
   const cardWidth = screenWidth - 48;
@@ -299,7 +301,7 @@ export default function WeatherGraphCard({ data, bestTime }: Props) {
               <Text style={styles.tooltipHour}>{tooltip.hour}</Text>
               {tooltip.isBest && (
                 <View style={styles.bestBadge}>
-                  <Text style={styles.bestBadgeText}>Best time to run</Text>
+                  <Text style={styles.bestBadgeText}>{isOutsideWindow ? 'Best time (rest of day)' : isRemainingBest ? 'Best remaining time' : 'Best time to run'}</Text>
                 </View>
               )}
             </View>

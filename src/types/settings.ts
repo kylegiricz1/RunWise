@@ -16,7 +16,13 @@ export type TimeWindow = {
   endHour: number;
 };
 
+export type NotificationPreferences = {
+  enabled: boolean;
+  hour: number; // 0–23.5 in 30-minute increments, default 20 (8:00 PM)
+};
+
 export type RunTimePreferences = {
   selectedPresets: PresetWindowKey[];
   customWindows: TimeWindow[];
+  notifications?: NotificationPreferences;
 };

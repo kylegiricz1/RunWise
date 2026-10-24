@@ -25,4 +25,11 @@ export type DailyBestTime = {
   date: string;
   time: string | null;
   score: number | null;
+  overallBestTime?: string | null;
+  overallScore?: number | null;
+  isPrimePassed?: boolean;
+  isOutsideWindow?: boolean;
+  preferredWindowPassed?: boolean;
+  allWindowsPassed?: boolean;
+  remainingHoursCount?: number;
 };
