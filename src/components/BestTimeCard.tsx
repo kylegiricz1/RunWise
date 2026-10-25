@@ -30,14 +30,11 @@ export default function BestTimeCard({
   isToday = false,
   isPrimePassed = false,
   isOutsideWindow = false,
-  preferredWindowPassed = false,
-  overallBestTime,
   allWindowsPassed = false,
   onJumpToTomorrow,
 }: Props) {
   const locationLabel = [city, state].filter(Boolean).join(', ') || 'Choose location';
   const formattedBestTime = formatTimeLabel(bestTime);
-  const formattedOverall = formatTimeLabel(overallBestTime);
 
   return (
     <View style={styles.section}>
@@ -90,14 +87,6 @@ export default function BestTimeCard({
         {allWindowsPassed ? (
           <>
             <Text style={styles.timePassed}>Done for today</Text>
-            {formattedOverall ? (
-              <Text style={styles.subtitle}>
-                Today's prime window was at {formattedOverall}.
-              </Text>
-            ) : (
-              <Text style={styles.subtitle}>No more run windows remaining today.</Text>
-            )}
-
             {onJumpToTomorrow && (
               <Pressable
                 style={({ pressed }) => [
@@ -113,20 +102,7 @@ export default function BestTimeCard({
             )}
           </>
         ) : (
-          <>
-            <Text style={styles.time}>{formattedBestTime ?? '—'}</Text>
-            {isToday && isOutsideWindow ? (
-              <Text style={styles.subtitleHighlight}>
-                Preferred window passed · Best available for rest of today
-              </Text>
-            ) : isToday && isPrimePassed && formattedOverall ? (
-              <Text style={styles.subtitleHighlight}>
-                Earlier prime window: {formattedOverall} (passed)
-              </Text>
-            ) : (
-              <Text style={styles.subtitle}>Cool temperatures and low wind</Text>
-            )}
-          </>
+          <Text style={styles.time}>{formattedBestTime ?? '—'}</Text>
         )}
       </View>
     </View>
@@ -241,24 +217,13 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 36,
     fontWeight: 'bold',
+    marginTop: 2,
   },
   timePassed: {
     color: 'white',
     fontSize: 30,
     fontWeight: 'bold',
     marginTop: 2,
-  },
-  subtitle: {
-    color: 'white',
-    fontSize: 13,
-    marginTop: 2,
-    fontWeight: '600',
-  },
-  subtitleHighlight: {
-    color: '#FEF08A',
-    fontSize: 12.5,
-    marginTop: 3,
-    fontWeight: '600',
   },
   tomorrowButton: {
     flexDirection: 'row',
